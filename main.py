@@ -8,7 +8,7 @@ if __name__ == '__main__':
 
     parser = HeaderFileParser()
 
-    structs = parser.parse(CommentRemovingLineProvider(FileLineProvider(mainFile)))
+    structs = parser.parse(FileLineProvider(mainFile))
 
     for struct in structs:
         print(struct)
