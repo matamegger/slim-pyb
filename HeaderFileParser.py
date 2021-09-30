@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import IO, Optional
 
+from lineprovider import LineProvider
+
 
 @dataclass
 class Field:
@@ -39,81 +41,6 @@ C_SYMBOL_MATCHER = "[a-zA-Z_$][a-zA-Z_$0-9]*"
 C_STRUCT_START_MATCHER = f"[\s\t]*(typedef )?struct ({C_SYMBOL_MATCHER} )?{{"
 C_STRUCT_END_MATCHER = f"[\s\t]*}}\s*({C_SYMBOL_MATCHER})?\s*;"
 C_STRUCT_FIELD_MATCHER = f"({C_SYMBOL_MATCHER}) (\*)?({C_SYMBOL_MATCHER})(?:\[([0-9]*)\])?;"
-
-
-class LineProvider:
-
-    def next(self) -> str:
-        pass
-
-    def line(self) -> str:
-        pass
-
-    def destroy(self):
-        pass
-
-
-class FileLineProvider(LineProvider):
-    __file: IO = None
-    __currentLine: str = None
-
-    def __init__(self, file):
-        self.__file = file
-
-    def next(self) -> str:
-        self.__currentLine = self.__file.readline()
-        return self.__currentLine
-
-    def line(self):
-        return self.__currentLine
-
-    def destroy(self):
-        self.__file.close()
-
-
-class CommentRemovingLineProvider(LineProvider):
-    __lineProvider: LineProvider
-    __currentLine: str = None
-    __multilineCommendStarted: bool = False
-
-    def __init__(self, lineProvider):
-        self.__lineProvider = lineProvider
-
-    def __preprocess_line(self, line):
-        if self.__multilineCommendStarted:
-            line_match = re.match(".*\*\/(.*)", line)
-            if line_match:
-                self.__multilineCommendStarted = False
-                return line_match.group(1)
-            else:
-                return None
-        else:
-            line_match = re.match("(.*)\/\*[^\*]*(\*\/)?(.*)", line)
-            if line_match:
-                self.__multilineCommendStarted = line_match.group(2) is None
-                return line_match.group(1) + line_match.group(3)
-            else:
-                return line
-
-    def next(self) -> Optional[str]:
-        while True:
-            line = self.__lineProvider.next()
-            if not line:
-                break
-            line = self.__preprocess_line(line)
-            if not line:
-                continue
-            if len(line) == 0 or line == "\n":
-                continue
-            break
-        self.__currentLine = line
-        return self.__currentLine
-
-    def line(self) -> Optional[str]:
-        return self.__currentLine
-
-    def destroy(self):
-        self.__lineProvider.destroy()
 
 
 class HeaderFileParser:
@@ -190,16 +117,13 @@ class HeaderFileParser:
         return None
 
     def parse(self, lineProvider: LineProvider):
+        lineProvider = CommentRemovingLineProvider(lineProvider)
         parser_state = _ParserState.FindStructStart
-        reprocessLine = False
+        struct_init: _StructInit
         structs = []
 
-        struct_init: _StructInit
         while True:
-            if not reprocessLine:
-                lineProvider.next()
-            else:
-                reprocessLine = False
+            lineProvider.next()
 
             if not lineProvider.line():
                 break
@@ -223,3 +147,48 @@ class HeaderFileParser:
                 raise Exception("Undefined Parser state entered")
 
         return structs
+
+
+class CommentRemovingLineProvider(LineProvider):
+    __lineProvider: LineProvider
+    __currentLine: str = None
+    __multilineCommendStarted: bool = False
+
+    def __init__(self, lineProvider):
+        self.__lineProvider = lineProvider
+
+    def __preprocess_line(self, line):
+        if self.__multilineCommendStarted:
+            line_match = re.match(".*\*\/(.*)", line)
+            if line_match:
+                self.__multilineCommendStarted = False
+                return line_match.group(1)
+            else:
+                return None
+        else:
+            line_match = re.match("(.*)\/\*[^\*]*(\*\/)?(.*)", line)
+            if line_match:
+                self.__multilineCommendStarted = line_match.group(2) is None
+                return line_match.group(1) + line_match.group(3)
+            else:
+                return line
+
+    def next(self) -> Optional[str]:
+        while True:
+            line = self.__lineProvider.next()
+            if not line:
+                break
+            line = self.__preprocess_line(line)
+            if not line:
+                continue
+            if len(line) == 0 or line == "\n":
+                continue
+            break
+        self.__currentLine = line
+        return self.__currentLine
+
+    def line(self) -> Optional[str]:
+        return self.__currentLine
+
+    def destroy(self):
+        self.__lineProvider.destroy()
