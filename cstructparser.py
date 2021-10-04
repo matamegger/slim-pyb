@@ -25,6 +25,7 @@ class Struct:
     name: str
     typedef: str
     fields: list[Field]
+    inner_structs: list
 
 
 @dataclass
@@ -101,10 +102,13 @@ class HeaderFileParser:
             struct_typedef = struct_end.group(1)
             struct_name = struct_init.name if struct_init.hasTypedef or not struct_typedef else struct_typedef
 
+            assert struct_init.innerStructsInit is None or len(struct_init.innerStructsInit) == 0
+
             return Struct(
                 struct_name,
                 struct_typedef,
-                struct_init.fields
+                struct_init.fields,
+                struct_init.innerStructs
             )
 
         return None
