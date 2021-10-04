@@ -6,6 +6,11 @@ from typing import Optional
 
 from lineprovider import LineProvider
 
+C_SYMBOL_MATCHER = "[a-zA-Z_$][a-zA-Z_$0-9]*"
+C_STRUCT_START_MATCHER = f"[\s\t]*(typedef )?struct ({C_SYMBOL_MATCHER} )?{{"
+C_STRUCT_END_MATCHER = f"[\s\t]*}}\s*({C_SYMBOL_MATCHER})?\s*;"
+C_STRUCT_FIELD_MATCHER = f"({C_SYMBOL_MATCHER}) (\*)?({C_SYMBOL_MATCHER})(?:\[([0-9]*)\])?;"
+
 
 @dataclass
 class Field:
@@ -29,18 +34,6 @@ class _StructInit:
     fields: list[Field] = field_parameter(default_factory=lambda: [])
     innerStructsInit = None
     innerStructs: list[Struct] = field_parameter(default_factory=lambda: [])
-
-
-class _ParserState(enum.Enum):
-    FindStructStart = 1
-    ReadStructContent = 2
-    FindEnd = 3
-
-
-C_SYMBOL_MATCHER = "[a-zA-Z_$][a-zA-Z_$0-9]*"
-C_STRUCT_START_MATCHER = f"[\s\t]*(typedef )?struct ({C_SYMBOL_MATCHER} )?{{"
-C_STRUCT_END_MATCHER = f"[\s\t]*}}\s*({C_SYMBOL_MATCHER})?\s*;"
-C_STRUCT_FIELD_MATCHER = f"({C_SYMBOL_MATCHER}) (\*)?({C_SYMBOL_MATCHER})(?:\[([0-9]*)\])?;"
 
 
 class HeaderFileParser:
@@ -133,7 +126,6 @@ class HeaderFileParser:
                 struct_init = HeaderFileParser.__read_struct_init(line_provider.line())
                 if struct_init:
                     parser_state = _ParserState.ReadStructContent
-                    print(f"Found struct with name {struct_init.name}, read content now")
             elif parser_state == _ParserState.ReadStructContent:
                 struct = HeaderFileParser.__handle_read_struct_content(line_provider.line(), struct_init)
                 if struct:
@@ -148,6 +140,12 @@ class HeaderFileParser:
                 raise Exception("Undefined Parser state entered")
 
         return structs
+
+
+class _ParserState(enum.Enum):
+    FindStructStart = 1
+    ReadStructContent = 2
+    FindEnd = 3
 
 
 class CommentRemovingLineProvider(LineProvider):
