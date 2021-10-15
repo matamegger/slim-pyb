@@ -3,6 +3,26 @@ from typing import Optional
 
 from cstructparser import Field
 
+MODULE_METHOD_INIT_PATTERN = """self.__c_{0} = getattr(self.dll, "{1}")"""
+
+MODULE_PATTERN = """class {0}:
+    def __init__(self, model="{1}"):
+        self.model = model
+        if platform.system() == "Linux":
+            self.dll_path = os.path.abspath(f"{model}.so")
+            self.dll = ctypes.cdll.LoadLibrary(self.dll_path)
+        elif platform.system() == "Darwin":
+            self.dll_path = os.path.abspath("system.dylib")
+            self.dll = ctypes.cdll.LoadLibrary(dll_path)
+        elif platform.system() == "Windows":
+            self.dll_path = os.path.abspath(f"{model}_win64.dll")
+            self.dll = ctypes.windll.LoadLibrary(self.dll_path)
+        else:
+            raise Exception("System Not Supported")
+            
+        {2}
+        """
+
 PYTHON_BINDER_CLASS_PATTERN = """class {0}(ctypes.Structure):
     {1}
     _fields_ = [
@@ -34,3 +54,25 @@ class PythonClass:
         comment = "" if not self.comment else f"\"\"\"{self.comment}\"\"\"\n"
 
         return PYTHON_BINDER_CLASS_PATTERN.format(self.name, comment, fields)
+
+@dataclass
+class Argument:
+    name: str
+    type: str
+
+@dataclass
+class ModuleField:
+    name: str
+    type: str
+
+@dataclass
+class ModuleFunction:
+    name: str
+    returnType: str
+    arguments: list[Argument]
+
+@dataclass
+class Module:
+    name: str
+    functions: list[ModuleFunction]
+    fields: list[ModuleField]
