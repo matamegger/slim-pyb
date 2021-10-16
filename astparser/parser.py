@@ -72,7 +72,7 @@ def _parse_type(node: Node) -> Type:
         raise Exception(f"Unexpected type {type(node)}{node}")
 
 
-class StructParser:
+class _StructParser:
     def parse_struct(self, struct: c_ast.Struct) -> Struct:
         return self._parse_struct(struct)
 
@@ -116,7 +116,7 @@ class StructParser:
             return None
 
 
-class EnumParser:
+class _EnumParser:
     @staticmethod
     def get_enumerator_value(enumerator: Enumerator) -> Optional[int]:
         if enumerator.value is None:
@@ -140,7 +140,7 @@ class EnumParser:
         for entry in enum.values:
             if not isinstance(entry, Enumerator):
                 raise Exception(f"Expected EnumeratorList but got {type(enum.values)}")
-            entry_value = EnumParser.get_enumerator_value(entry)
+            entry_value = _EnumParser.get_enumerator_value(entry)
             if entry_value is None:
                 entry_value = ++last_value
             last_value = entry_value
@@ -155,7 +155,7 @@ class EnumParser:
         )
 
 
-class TypdefParser:
+class _TypdefParser:
     def parse_typedefs(self, typedefs: list[Typedef]):
         type_definitions: list[TypeDefinition] = []
         structs: list[Struct] = []
@@ -197,7 +197,7 @@ class TypdefParser:
     @staticmethod
     def _parse_struct(typedecl: TypeDecl) -> Optional[Struct]:
         if isinstance(typedecl.type, c_ast.Struct) and typedecl.type.decls is not None:
-            struct = StructParser().parse_struct(typedecl.type)
+            struct = _StructParser().parse_struct(typedecl.type)
             if struct.name is None:
                 struct = replace(struct, name=typedecl.declname)
             return struct
@@ -207,7 +207,7 @@ class TypdefParser:
     @staticmethod
     def _parse_enum(typedecl: TypeDecl) -> Optional[Enum]:
         if isinstance(typedecl.type, c_ast.Enum):
-            enum = EnumParser().parse_enum(typedecl.type)
+            enum = _EnumParser().parse_enum(typedecl.type)
             if enum.name is None:
                 enum = replace(enum, name=typedecl.declname)
             return enum
@@ -226,7 +226,7 @@ class AstParser:
         self._parse_unnamed_top_level_declarations(self._get_unnamed_top_level_declarations(declarations))
 
         typedefs = self._get_top_level_typedefs(definitions)
-        TypdefParser().parse_typedefs(typedefs)
+        _TypdefParser().parse_typedefs(typedefs)
 
     def _parse_unnamed_top_level_declarations(self, declarations: list[Decl]) -> list[Struct]:
         ast_structs = []
@@ -234,7 +234,7 @@ class AstParser:
             if not isinstance(declaration.type, c_ast.Struct):
                 raise Exception("Unexpected type {type(d.type)}")
             ast_structs.append(declaration.type)
-        return StructParser().parse_structs(ast_structs)
+        return _StructParser().parse_structs(ast_structs)
 
     @staticmethod
     def _get_unnamed_top_level_declarations(declarations: list[Decl]) -> list[Decl]:
