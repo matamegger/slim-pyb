@@ -11,6 +11,7 @@ from pycparser.c_ast import FileAST, FuncDecl, Node, Decl, TypeDecl, IdentifierT
     Typedef, Constant
 from pycparser.plyparser import Coord
 
+from astparser.types import c
 from pybindingwriter import Module, ModuleField, ModuleFunction
 
 input_file = os.path.expanduser(sys.argv[1])
@@ -22,15 +23,38 @@ ast = parse_file(input_file,
 
 # print(type(ast.ext[0].coord))
 
-definitions = list(filter(lambda it: "fake_libc_include" not in it.coord.file, ast.ext))
-
-main_definitions = list(filter(lambda it: input_file == it.coord.file, definitions))
 
 
 @dataclass(frozen=True)
 class Type:
     name: str
     constant: bool
+
+
+@dataclass(frozen=True)
+class VoidType(Type):
+    name: str = field(init=False, default="void")
+    constant: bool = field(init=False, default=False)
+
+
+@dataclass(frozen=True)
+class Pointer(Type):
+    name: str = field(init=False, default="Pointer")
+    type: Type
+
+
+@dataclass(frozen=True)
+class Array(Type):
+    name: str = field(init=False, default="Array")
+    constant: bool = field(init=False, default=False)
+    type: Type
+    size: int
+
+
+@dataclass(frozen=True)
+class Alias(Type):
+    alias: Type
+    constant: bool = field(init=False, default=False)
 
 
 @dataclass
@@ -55,31 +79,6 @@ class Enum(Type):
     entries: list[EnumEntry]
 
 
-@dataclass(frozen=True)
-class Pointer(Type):
-    name: str = field(init=False, default="Pointer")
-    type: Type
-
-
-@dataclass(frozen=True)
-class Array(Type):
-    name: str = field(init=False, default="Array")
-    constant: bool = field(init=False, default=False)
-    type: Type
-    size: int
-
-
-@dataclass(frozen=True)
-class VoidType(Type):
-    name: str = field(init=False, default="void")
-    constant: bool = field(init=False, default=False)
-
-
-@dataclass(frozen=True)
-class Alias(Type):
-    alias: Type
-    constant: bool = field(init=False, default=False)
-
 
 @dataclass
 class Method:
@@ -95,12 +94,7 @@ class ModelStructure:
     methods: list[Method]
 
 
-def get_model_declarations(definitions: list[Node]) -> list[Decl]:
-    declarations: list[Decl] = []
-    for node in definitions:
-        if isinstance(node, Decl) and node.name is not None:
-            declarations.append(node)
-    return declarations
+
 
 
 def parse_enum(ast_enum: c_ast.Enum, declaration_name: Optional[str], is_constant: bool) -> Enum:
@@ -193,7 +187,7 @@ def get_function_arguments(function: FuncDecl) -> list[Field]:
 
 fields: list[Field] = []
 methods: list[Method] = []
-model_declarations = get_model_declarations(main_definitions)
+model_declarations = get_declarations(main_definitions)
 # print(model_declarations)
 for node in model_declarations:
     if isinstance(node.type, FuncDecl):
