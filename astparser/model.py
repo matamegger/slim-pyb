@@ -20,7 +20,7 @@ class Struct:
 @dataclass(frozen=True)
 class EnumEntry:
     name: str
-    value: Optional[int]
+    value: int
 
 
 @dataclass(frozen=True)
