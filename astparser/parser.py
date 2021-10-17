@@ -137,13 +137,14 @@ class _EnumParser:
         entries: list[EnumEntry] = []
         if not isinstance(enum.values, EnumeratorList):
             raise Exception(f"Expected EnumeratorList but got {type(enum.values)}")
-        last_value = -1
+        last_value: int = -1
         for entry in enum.values:
             if not isinstance(entry, Enumerator):
                 raise Exception(f"Expected EnumeratorList but got {type(enum.values)}")
             entry_value = _EnumParser.get_enumerator_value(entry)
             if entry_value is None:
-                entry_value = ++last_value
+                last_value += 1
+                entry_value = last_value
             last_value = entry_value
             entries.append(EnumEntry(
                 name=entry.name,
