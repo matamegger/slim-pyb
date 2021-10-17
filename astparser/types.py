@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,12 @@ class StructType(Type):
 
 
 @dataclass(frozen=True)
+class FunctionParameter:
+    name: Optional[str]
+    type: Type
+
+
+@dataclass(frozen=True)
 class FunctionType(Type):
-    params: list[Type]
+    params: list[FunctionParameter]
     return_type: Type
