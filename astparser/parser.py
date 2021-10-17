@@ -1,14 +1,14 @@
 import os
 import sys
-from dataclasses import replace, dataclass
+from dataclasses import replace
 from typing import Callable
 
-from astparser.types import *
-from model import *
-
 from pycparser import parse_file, c_ast
-from pycparser.c_ast import Node, Decl, Typedef, TypeDecl, IdentifierType, PtrDecl, ArrayDecl, Constant, EnumeratorList, \
-    Enumerator, ParamList, Typename, FuncDecl, FileAST
+from pycparser.c_ast import Node, Decl, Typedef, TypeDecl, IdentifierType, PtrDecl, ArrayDecl, Constant, \
+    EnumeratorList, Enumerator, ParamList, Typename, FuncDecl, FileAST
+
+from astparser.model import *
+from astparser.types import *
 
 
 def _get_declarations(definitions: list[Node]) -> list[Decl]:

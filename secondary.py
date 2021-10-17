@@ -1,17 +1,12 @@
-import ctypes
-import enum
 import os.path
-import re
 import sys
 from dataclasses import dataclass, field, replace
-from typing import Optional, Union
+from typing import Optional
 
-from pycparser import c_parser, c_ast, parse_file
-from pycparser.c_ast import FileAST, FuncDecl, Node, Decl, TypeDecl, IdentifierType, Typename, PtrDecl, ArrayDecl, \
+from pycparser import c_ast, parse_file
+from pycparser.c_ast import FuncDecl, Node, Decl, TypeDecl, IdentifierType, Typename, PtrDecl, ArrayDecl, \
     Typedef, Constant
-from pycparser.plyparser import Coord
 
-from astparser.types import c
 from pybindingwriter import Module, ModuleField, ModuleFunction
 
 input_file = os.path.expanduser(sys.argv[1])
@@ -21,8 +16,8 @@ ast = parse_file(input_file,
                  cpp_args=['-E', '-Ifake_libc_include', '-D_Atomic(x)=x', '-D_Bool=int', '-D__extension__=',
                            '-U__STDC__'])
 
-# print(type(ast.ext[0].coord))
 
+# print(type(ast.ext[0].coord))
 
 
 @dataclass(frozen=True)
@@ -79,7 +74,6 @@ class Enum(Type):
     entries: list[EnumEntry]
 
 
-
 @dataclass
 class Method:
     name: str
@@ -92,9 +86,6 @@ class Method:
 class ModelStructure:
     fields: list[Field]
     methods: list[Method]
-
-
-
 
 
 def parse_enum(ast_enum: c_ast.Enum, declaration_name: Optional[str], is_constant: bool) -> Enum:
@@ -372,7 +363,6 @@ m = Module(
     [ModuleField(field.name, to_ctypes_type(field.type)) for field in model.fields]
 )
 
-
 needed_types = set(
     [get_root_type_name(method.returnType) for method in model.methods] + [get_root_type_name(field.type) for field in
                                                                            model.fields])
@@ -402,7 +392,8 @@ while len(needed_types) != 0:
         if isinstance(f, Struct):
             if f not in structs:
                 structs.append(f)
-            needed_types += filter(lambda it: it not in known_types, [get_root_type_name(field.type) for field in f.fields])
+            needed_types += filter(lambda it: it not in known_types,
+                                   [get_root_type_name(field.type) for field in f.fields])
         elif isinstance(f, Enum):
             if f not in enums:
                 enums.append(f)
