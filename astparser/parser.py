@@ -1,13 +1,14 @@
 import os
 import sys
-from dataclasses import replace
+from dataclasses import replace, dataclass
+from typing import Callable
 
 from astparser.types import *
 from model import *
 
 from pycparser import parse_file, c_ast
 from pycparser.c_ast import Node, Decl, Typedef, TypeDecl, IdentifierType, PtrDecl, ArrayDecl, Constant, EnumeratorList, \
-    Enumerator, ParamList, Typename
+    Enumerator, ParamList, Typename, FuncDecl, FileAST
 
 
 def _get_declarations(definitions: list[Node]) -> list[Decl]:
@@ -54,12 +55,12 @@ def _parse_type(node: Node) -> Type:
     elif isinstance(node, c_ast.Struct):
         return StructType(name=node.name, constant=False)
     elif isinstance(node, c_ast.FuncDecl):
-        params: list[Type] = []
+        params: list[FunctionParameter] = []
         if not isinstance(node.args, ParamList):
-            raise Exception("Unexpected type for function arguments {type(node.args)}")
+            raise Exception(f"Unexpected type for function arguments {type(node.args)}")
         for parameter in node.args.params:
             if isinstance(parameter, Typename) or isinstance(parameter, Decl):
-                params.append(_parse_type(parameter.type))
+                params.append(FunctionParameter(name=parameter.name, type=_parse_type(parameter.type)))
             else:
                 raise Exception(f"Unexpected type for parameter in parameter list {parameter}")
 
@@ -155,8 +156,21 @@ class _EnumParser:
         )
 
 
+@dataclass(frozen=True)
+class _AstElements:
+    type_definitions: list[TypeDefinition]
+    structs: list[Struct]
+    enums: list[Enum]
+
+
+@dataclass(frozen=True)
+class _AstInterface:
+    fields: list[Field]
+    methods: list[Method]
+
+
 class _TypdefParser:
-    def parse_typedefs(self, typedefs: list[Typedef]):
+    def parse_typedefs(self, typedefs: list[Typedef]) -> _AstElements:
         type_definitions: list[TypeDefinition] = []
         structs: list[Struct] = []
         enums: list[Enum] = []
@@ -167,21 +181,30 @@ class _TypdefParser:
                 if type_definition is not None:
                     type_definitions.append(type_definition)
                     continue
+
                 struct = self._parse_struct(typedef.type)
                 if struct is not None:
                     structs.append(struct)
                     continue
+
                 enum = self._parse_enum(typedef.type)
                 if enum is not None:
                     enums.append(enum)
                     continue
 
                 raise Exception(f"Unhandled type {typedef.type}")
+
             else:
                 typedef_type = _parse_type(typedef.type)
                 if typedef_type is None:
                     raise Exception(f"Unhandled type {typedef.type}")
                 type_definitions.append(TypeDefinition(name=typedef.name, for_type=typedef_type))
+
+        return _AstElements(
+            type_definitions=type_definitions,
+            structs=structs,
+            enums=enums
+        )
 
     @staticmethod
     def _parse_type_definition(typedecl: TypeDecl) -> Optional[TypeDefinition]:
@@ -219,16 +242,86 @@ class _TypdefParser:
 
 
 class AstParser:
-    def parse(self, ast):
-        definitions = list(filter(lambda it: "fake_libc_include" not in it.coord.file, ast.ext))
+    origin_file_filter: Optional[Callable[[str], bool]] = None
+
+    def parse(self, ast: FileAST) -> Module:
+        definitions = self._filter_by_file(ast, self.origin_file_filter)
         # main_definitions = list(filter(lambda it: input_file == it.coord.file, definitions))
         declarations = self._get_top_level_declarations(definitions)
-        self._parse_unnamed_top_level_declarations(self._get_unnamed_top_level_declarations(declarations))
-
+        unnamed_declarations = self._get_unnamed_top_level_declarations(declarations)
+        named_declarations = self._get_named_top_level_declarations(declarations)
         typedefs = self._get_top_level_typedefs(definitions)
-        _TypdefParser().parse_typedefs(typedefs)
 
-    def _parse_unnamed_top_level_declarations(self, declarations: list[Decl]) -> list[Struct]:
+        structs = self._parse_unnamed_top_level_declarations(unnamed_declarations)
+        ast_elements = _TypdefParser().parse_typedefs(typedefs)
+        ast_interface = self._parse_named_top_level_declarations(named_declarations)
+
+        return Module(
+            type_definitions=ast_elements.type_definitions,
+            structs=ast_elements.structs + structs,
+            enums=ast_elements.enums,
+            fields=ast_interface.fields,
+            methods=ast_interface.methods
+        )
+
+    @staticmethod
+    def _filter_by_file(ast: FileAST, origin_file_filter: Optional[Callable[[str], bool]]) -> list[Node]:
+        return list(filter(lambda it: origin_file_filter(it.coord.file), ast.ext))
+
+    def _parse_named_top_level_declarations(self, declarations: list[Decl]) -> _AstInterface:
+        fields: list[Field] = []
+        methods: list[Method] = []
+        for declaration in declarations:
+            field = self._parse_field(declaration)
+            if field is not None:
+                fields.append(field)
+                continue
+
+            method = self._parse_method(declaration)
+            if method is not None:
+                methods.append(method)
+                continue
+
+            raise Exception(f"Unhandled declaration {declaration}")
+
+        return _AstInterface(
+            fields=fields,
+            methods=methods
+        )
+
+    @staticmethod
+    def _parse_method(declaration: Decl) -> Optional[Method]:
+        if isinstance(declaration.type, FuncDecl):
+            function = declaration.type
+            params: list[MethodParameter] = []
+            if not isinstance(function.args, ParamList):
+                raise Exception(f"Unexpected type for function arguments {type(function.args)}")
+            for parameter in function.args.params:
+                if isinstance(parameter, Typename) or isinstance(parameter, Decl):
+                    params.append(MethodParameter(name=parameter.name, type=_parse_type(parameter.type)))
+                else:
+                    raise Exception(f"Unexpected type for parameter in parameter list {parameter}")
+
+            return Method(
+                name=declaration.name,
+                parameter=params,
+                return_type=_parse_type(function.type)
+            )
+        else:
+            return None
+
+    @staticmethod
+    def _parse_field(declaration: Decl) -> Optional[Field]:
+        parsed_type = _parse_type(declaration.type)
+        if isinstance(parsed_type, FunctionType):
+            return None
+        return Field(
+            name=declaration.name,
+            type=parsed_type
+        )
+
+    @staticmethod
+    def _parse_unnamed_top_level_declarations(declarations: list[Decl]) -> list[Struct]:
         ast_structs = []
         for declaration in declarations:
             if not isinstance(declaration.type, c_ast.Struct):
@@ -260,4 +353,6 @@ if __name__ == '__main__':
                      cpp_path="clang",
                      cpp_args=['-E', '-Ifake_libc_include', '-D_Atomic(x)=x', '-D_Bool=int', '-D__extension__=',
                                '-U__STDC__'])
-    AstParser().parse(ast)
+    astParser = AstParser()
+    astParser.origin_file_filter = lambda it: "fake_libc_include" not in it
+    print(astParser.parse(ast))

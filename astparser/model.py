@@ -33,3 +33,31 @@ class Enum:
 class TypeDefinition:
     name: str
     for_type: Type
+
+
+@dataclass(frozen=True)
+class Field:
+    name: str
+    type: Type
+
+
+@dataclass(frozen=True)
+class MethodParameter:
+    name: str
+    type: Type
+
+
+@dataclass(frozen=True)
+class Method:
+    name: str
+    parameter: list[MethodParameter]
+    return_type: Type
+
+
+@dataclass(frozen=True)
+class Module:
+    type_definitions: list[TypeDefinition]
+    structs: list[Struct]
+    enums: list[Enum]
+    fields: list[Field]
+    methods: list[Method]
