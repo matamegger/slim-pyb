@@ -4,11 +4,6 @@ from astparser import get_base_type_name
 from astparser.model import Module, TypeDefinition, Struct, Enum
 from astparser.types import *
 
-
-def _ctype_to_string(ctype) -> str:
-    return f"ctypes.{ctype.__name__}"
-
-
 primitive_names_to_ctypes = {
     "byte": ctypes.c_byte,
     "char": ctypes.c_char,
@@ -37,25 +32,32 @@ primitive_names_to_ctypes = {
     "unsigned long": ctypes.c_ulong,
     "unsigned long long": ctypes.c_ulonglong,
     "size_t": ctypes.c_size_t,
-    "ptrdiff_t": ctypes.c_ssize_t
+    "ptrdiff_t": ctypes.c_ssize_t,
+    "void": None
 }
 
-primitive_names = set([k for k, v in primitive_names_to_ctypes.items()] + ["void"])
+primitive_names = set([k for k, v in primitive_names_to_ctypes.items()])
 
+
+def _ctype_to_string(ctype) -> str:
+    if ctype is None:
+        return "None"
+    return f"ctypes.{ctype.__name__}"
 
 class CtypesMapper:
     _POINTER_PATTERN = """ctypes.POINTER({0})"""
     _ARRAY_PATTERN = """({0}*{1})"""
     _FUNCTION_PATTERN = """ctypes.CFUNCTYPE({0}, {1})"""
-    _primitive_mappings = {k: _ctype_to_string(v) for k, v in primitive_names_to_ctypes.items()}
+    _primitive_mappings: dict[str, str] = {k: _ctype_to_string(v) for k, v in primitive_names_to_ctypes.items()}
     _void_pointer = _ctype_to_string(ctypes.c_void_p)
+
     additional_mappings: dict[str, str] = {}
 
     def has_primitive_base(self, typ: Type) -> bool:
         return self.is_primitive_type_name(get_base_type_name(typ))
 
     def is_primitive_type_name(self, name: str) -> bool:
-        return name in self._primitive_mappings or name == "void"
+        return name in self._primitive_mappings
 
     def get_mapping(self, typ: Type) -> str:
         if isinstance(typ, NamedType):
