@@ -6,6 +6,7 @@ from pycparser import parse_file
 
 from astparser.parser import AstParser
 from bindinggenerator.generator import BindingGenerator
+from bindinggenerator.simplifyer import ModuleCleaner
 
 if __name__ == '__main__':
     main_file_path = os.path.expanduser(sys.argv[1])
@@ -20,6 +21,8 @@ if __name__ == '__main__':
     astParser = AstParser()
     astParser.origin_file_filter = lambda it: "fake_libc_include" not in it
     module = astParser.parse(ast)
+    module = ModuleCleaner().remove_not_used_elements(module)
+
     bindingGenerator = BindingGenerator()
     generated_python = bindingGenerator.generate(module)
     output_file = open(output_file_path, "w")
