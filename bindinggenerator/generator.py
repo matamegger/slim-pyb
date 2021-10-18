@@ -1,5 +1,6 @@
 import ctypes
 
+from astparser import get_base_type_name
 from astparser.model import Module, TypeDefinition, Struct, Enum
 from astparser.types import *
 
@@ -46,22 +47,10 @@ class CtypesMapper:
     additional_mappings: dict[str, str] = {}
 
     def has_primitive_base(self, typ: Type) -> bool:
-        return self.is_primitive_type_name(self.get_base_type_name(typ))
+        return self.is_primitive_type_name(get_base_type_name(typ))
 
     def is_primitive_type_name(self, name: str) -> bool:
         return name in self._primitive_mappings or name == "void"
-
-    def get_base_type_name(self, typ: Type) -> str:
-        if isinstance(typ, NamedType):
-            return typ.name
-        elif isinstance(typ, Pointer):
-            return self.get_base_type_name(typ)
-        elif isinstance(typ, StructType):
-            return typ.name
-        elif isinstance(typ, Array):
-            return self.get_base_type_name(typ.of)
-        else:
-            raise Exception("Unhandled case")
 
     def get_mapping(self, typ: Type) -> str:
         if isinstance(typ, NamedType):
