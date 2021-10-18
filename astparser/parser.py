@@ -41,7 +41,7 @@ def _parse_type(node: Node) -> Type:
         if isinstance(parsed_type, NamedType):
             parsed_type = NamedType(name=parsed_type.name, constant=_is_constant(node))
         elif isinstance(parsed_type, StructType):
-            parsed_type = NamedType(name=node.declname, constant=_is_constant(node))
+            parsed_type = StructType(name=node.declname, constant=_is_constant(node))
         return parsed_type
     elif isinstance(node, IdentifierType):
         name = _identifier_names_to_str(node.names)
@@ -100,7 +100,8 @@ class _StructParser:
                 ast_struct = self._find_struct(declaration.type)
                 if ast_struct is None:
                     raise Exception("Found struct type, but could not find Struct")
-                inner_structs.append(self._parse_struct(ast_struct))
+                inner_struct = replace(self._parse_struct(ast_struct), name=property.name)
+                inner_structs.append(inner_struct)
 
         return Struct(
             name=name,
