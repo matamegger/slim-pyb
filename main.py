@@ -5,8 +5,8 @@ from pathlib import Path
 from pycparser import parse_file
 
 from astparser.parser import AstParser
-from bindinggenerator.generator import BindingGenerator
-from bindinggenerator.simplifyer import ModuleCleaner
+from bindinggenerator.generator import BindingGenerator, primitive_names
+from bindinggenerator.moduelcleaner import ModuleCleaner
 
 if __name__ == '__main__':
     main_file_path = os.path.expanduser(sys.argv[1])
@@ -19,9 +19,11 @@ if __name__ == '__main__':
                      cpp_args=['-E', '-Ifake_libc_include', '-D_Atomic(x)=x', '-D_Bool=int', '-D__extension__=',
                                '-U__STDC__'])
     astParser = AstParser()
+    moduleCleaner = ModuleCleaner()
+    moduleCleaner.externally_known_type_name = primitive_names
     astParser.origin_file_filter = lambda it: "fake_libc_include" not in it
     module = astParser.parse(ast)
-    module = ModuleCleaner().remove_not_used_elements(module)
+    module = moduleCleaner.remove_not_used_elements(module)
 
     bindingGenerator = BindingGenerator()
     generated_python = bindingGenerator.generate(module)
