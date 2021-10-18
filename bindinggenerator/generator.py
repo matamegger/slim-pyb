@@ -81,6 +81,9 @@ class CtypesMapper:
                 return self.get_mapping(typ.of)
             return self._pointer(self.get_mapping(typ.of))
         elif isinstance(typ, StructType):
+            mapping = self.additional_mappings.get(typ.name)
+            if mapping is not None:
+                return mapping
             return typ.name
         elif isinstance(typ, Array):
             return self._array(self.get_mapping(typ.of), typ.size)
@@ -177,18 +180,26 @@ class BindingGenerator:
         ) for enum in enums]
 
     def _convert_struct(self, struct: Struct, ctypes_mapper: CtypesMapper, name_prefix: str = "") -> str:
-        output = self._STRUCT_PATTERN.format(
-            name_prefix + struct.name,
+        struct_name = name_prefix + struct.name
+        output: str = ""
+        for inner_struct in struct.inner_structs:
+            inner_name_prefix = f"{struct_name}_"
+            output += self._convert_struct(inner_struct, ctypes_mapper, inner_name_prefix)
+            output += "\n\n"
+            ctypes_mapper.additional_mappings[inner_struct.name] = inner_name_prefix + inner_struct.name
+
+        output += self._STRUCT_PATTERN.format(
+            struct_name,
             "",
             ", \n".join([self._STRUCT_FIELD_PATTERN.format(
                 property.name,
                 ctypes_mapper.get_mapping(property.type)
             ) for property in struct.properties])
         )
-        if len(struct.inner_structs) > 0:
-            output += "\n\n"
-            output += [self._convert_struct(inner_struct, ctypes_mapper, f"{struct.name}_") + "\n\n"
-                       for inner_struct in struct.inner_structs]
+
+        for inner_struct in struct.inner_structs:
+            del ctypes_mapper.additional_mappings[inner_struct.name]
+
         return output
 
     def _convert_enum(self, enum: Enum) -> str:
