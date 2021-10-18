@@ -41,7 +41,10 @@ def _parse_type(node: Node) -> Type:
         if isinstance(parsed_type, NamedType):
             parsed_type = NamedType(name=parsed_type.name, constant=_is_constant(node))
         elif isinstance(parsed_type, StructType):
-            parsed_type = StructType(name=node.declname, constant=_is_constant(node))
+            struct_name = parsed_type.name
+            if struct_name is None:
+                struct_name = node.declname
+            parsed_type = StructType(name=struct_name, constant=_is_constant(node))
         return parsed_type
     elif isinstance(node, IdentifierType):
         name = _identifier_names_to_str(node.names)
@@ -182,7 +185,6 @@ class _TypdefParser:
                 type_definition = self._parse_type_definition(typedef.type)
                 if type_definition is not None:
                     type_definitions.append(type_definition)
-                    continue
 
                 struct = self._parse_struct(typedef.type)
                 if struct is not None:
@@ -194,7 +196,8 @@ class _TypdefParser:
                     enums.append(enum)
                     continue
 
-                raise Exception(f"Unhandled type {typedef.type}")
+                if type_definition is None:
+                    raise Exception(f"Unhandled type {typedef.type}")
 
             else:
                 typedef_type = _parse_type(typedef.type)
@@ -214,7 +217,8 @@ class _TypdefParser:
             return TypeDefinition(
                 name=typedecl.declname,
                 for_type=_parse_type(typedecl.type))
-        elif isinstance(typedecl.type, c_ast.Struct) and typedecl.type.decls is None:
+        elif isinstance(typedecl.type, c_ast.Struct) and \
+                (typedecl.type.decls is None or typedecl.type.name is not None):
             return TypeDefinition(name=typedecl.declname, for_type=_parse_type(typedecl.type))
         else:
             return None
