@@ -17,6 +17,35 @@ ast = parse_file(input_file,
                            '-U__STDC__'])
 
 
+class SpringMassDamperSystem:
+    def __init__(self, model="springMassSystem"):
+        self.model = model
+        if platform.system() == "Linux":
+            self.dll_path = os.path.abspath(f"{model}.so")
+            self.dll = ctypes.cdll.LoadLibrary(self.dll_path)
+        elif platform.system() == "Darwin":
+            self.dll_path = os.path.abspath(f"{model}.dylib")
+            self.dll = ctypes.cdll.LoadLibrary(dll_path)
+        elif platform.system() == "Windows":
+            self.dll_path = os.path.abspath(f"{model}_win64.dll")
+            self.dll = ctypes.windll.LoadLibrary(self.dll_path)
+        else:
+            raise Exception("System Not Supported")
+
+        # Model entry point functions
+        self.__initialize = getattr(self.dll, f"{model}_initialize")
+        self.__step = getattr(self.dll, f"{model}_step")
+        self.__model_terminate = getattr(self.dll, f"{model}_terminate")
+
+        # Model signals
+        self._output = real_T.in_dll(self.dll, "OutputSignal")
+        self._time = real_T.in_dll(self.dll, "SimTime")
+
+        # Model Parameters
+        self._input_signal = real_T.in_dll(self.dll, "InputSignal")
+        self._num = (real_T * 2).in_dll(self.dll, "num")
+        self._den = (real_T * 2).in_dll(self.dll, "den")
+
 # print(type(ast.ext[0].coord))
 
 
