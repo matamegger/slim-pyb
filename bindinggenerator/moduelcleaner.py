@@ -63,9 +63,26 @@ class ModuleCleaner:
                                  for typ in self._get_referenced_types(struct)]
         referenced_base_types += [get_base_type(type_definition.for_type)
                                   for type_definition in type_definitions]
+
+        referenced_function_types = self._get_function_types(referenced_base_types)
+        while len(referenced_function_types) > 0:
+            function_referenced_base_types = self._get_referenced_base_types(referenced_function_types)
+            referenced_function_types = self._get_function_types(function_referenced_base_types)
+            referenced_base_types += function_referenced_base_types
+
         return set([get_base_type_name(typ)
                     for typ in referenced_base_types
                     if not isinstance(typ, FunctionType)])
+
+    @staticmethod
+    def _get_function_types(types: list[Type]) -> list[FunctionType]:
+        return [typ for typ in types if isinstance(typ, FunctionType)]
+
+    @staticmethod
+    def _get_referenced_base_types(function_types: list[FunctionType]) -> list[Type]:
+        return [get_base_type(param.type)
+                for function_type in function_types
+                for param in function_type.params]
 
     @staticmethod
     def _find_needed_structs(all_structs: list[Struct], needed_type_names: set[str]) -> list[Struct]:
