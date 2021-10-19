@@ -1,8 +1,12 @@
 import ctypes
+from dataclasses import replace
 
 from astparser import get_base_type_name
 from astparser.model import Module, TypeDefinition, Struct, Enum
 from astparser.types import *
+from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import
+from bindinggenerator.model import File, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
+    CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
 
 primitive_names_to_ctypes = {
     "byte": ctypes.c_byte,
@@ -43,6 +47,7 @@ def _ctype_to_string(ctype) -> str:
     if ctype is None:
         return "None"
     return f"ctypes.{ctype.__name__}"
+
 
 class CtypesMapper:
     _POINTER_PATTERN = """ctypes.POINTER({0})"""
@@ -208,8 +213,102 @@ class BindingGenerator:
         )
         return output
 
-    def _convert_type_definition(self, type_definition: TypeDefinition, ctypes_mapper: CtypesMapper) -> str:
+    @staticmethod
+    def _convert_type_definition(type_definition: TypeDefinition, ctypes_mapper: CtypesMapper) -> str:
         return BindingGenerator._TYPE_DEFINITION_PATTER.format(
             type_definition.name,
             ctypes_mapper.get_mapping(type_definition.for_type)
+        )
+
+
+class PythonBindingFileGenerator:
+    _TYPE_REMAPPING_MAP: dict[str, str] = {}
+
+    def generate(self, module: Module) -> File:
+        imports = [
+            Import(None, ["ctypes"]),
+            Import("enum", ["Enum"])
+        ]
+        enum_type_definitions = self._create_primitive_type_definitions_for_enums(module.enums)
+        elements = [self._create_element_from_type_definition(type_definition)
+                    for type_definition in enum_type_definitions]
+        self._TYPE_REMAPPING_MAP = {enum.name: self._ctypes_enum_name(enum) for enum in module.enums}
+        elements += [self._create_element_from_type_definition(type_definition)
+                     for type_definition in module.type_definitions]
+        elements += [self._create_element_from_enum(enum) for enum in module.enums]
+
+        elements += [self._create_element_from_struct(
+            self._add_struct_name_prefix_to_inner_structs_name(struct)
+        )
+            for struct in module.structs]
+
+        return File(
+            name="binding.py",
+            imports=imports,
+            elements=elements
+        )
+
+    @staticmethod
+    def _ctypes_enum_name(enum: Enum) -> str:
+        return f"enum_{enum.name}"
+
+    def _create_primitive_type_definitions_for_enums(self, enums: list[Enum]) -> list[TypeDefinition]:
+        return [TypeDefinition(
+            name=self._ctypes_enum_name(enum),
+            for_type=NamedType(name="int", constant=False)
+        ) for enum in enums]
+
+    def _convert_type(self, typ: Type) -> CtypeFieldType:
+        if isinstance(typ, StructType) or isinstance(typ, NamedType):
+            name = typ.name
+            if name in self._TYPE_REMAPPING_MAP:
+                name = self._TYPE_REMAPPING_MAP[name]
+            return NamedCtypeFieldType(
+                name=name
+            )
+        elif isinstance(typ, Pointer):
+            # We do not need to wrap the function in a pointer
+            # as it is always a function pointer
+            # TODO actually this is a design flaw in the parser !?
+            if isinstance(typ.of, FunctionType):
+                return CtypeFieldFunctionPointer(
+                    return_type=self._convert_type(typ.of.return_type),
+                    parameter_types=[self._convert_type(parameter.type) for parameter in typ.of.params]
+                )
+            return CtypeFieldPointer(
+                of=self._convert_type(typ.of)
+            )
+        elif isinstance(typ, Array):
+            return CtypeFieldTypeArray(
+                of=self._convert_type(typ.of),
+                size=typ.size
+            )
+        else:
+            raise Exception(f"Unhandled type {typ}")
+
+    def _add_struct_name_prefix_to_inner_structs_name(self, struct: Struct) -> Struct:
+        inner_structs: list[Struct] = []
+        for inner_struct in struct.inner_structs:
+            inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
+            inner_structs.append(self._add_struct_name_prefix_to_inner_structs_name(inner_struct))
+
+        return replace(struct, inner_structs=inner_structs)
+
+    def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
+        return CtypeStruct(
+            name=struct.name,
+            fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
+                    for property in struct.properties]
+        )
+
+    def _create_element_from_enum(self, enum: Enum) -> EnumElement:
+        return EnumElement(
+            name=enum.name,
+            entries=[EnumElementEntry(name=entry.name, value=entry.value) for entry in enum.entries]
+        )
+
+    def _create_element_from_type_definition(self, type_definition: TypeDefinition) -> Definition:
+        return Definition(
+            name=type_definition.name,
+            for_type=self._convert_type(type_definition.for_type)
         )

@@ -5,7 +5,7 @@ from pathlib import Path
 from pycparser import parse_file
 
 from astparser.parser import AstParser
-from bindinggenerator.generator import BindingGenerator, primitive_names
+from bindinggenerator.generator import BindingGenerator, primitive_names, PythonBindingFileGenerator
 from bindinggenerator.moduelcleaner import ModuleCleaner
 
 if __name__ == '__main__':
@@ -25,8 +25,9 @@ if __name__ == '__main__':
     module = astParser.parse(ast)
     module = moduleCleaner.remove_not_used_elements(module)
 
-    bindingGenerator = BindingGenerator()
+    bindingGenerator = PythonBindingFileGenerator()
     generated_python = bindingGenerator.generate(module)
-    output_file = open(output_file_path, "w")
-    output_file.write(generated_python)
-    output_file.close()
+    print(generated_python)
+    #output_file = open(output_file_path, "w")
+    #output_file.write(generated_python)
+    #output_file.close()
