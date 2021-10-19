@@ -6,6 +6,7 @@ from typing import Optional
 class CtypeFieldType:
     pass
 
+
 @dataclass(frozen=True)
 class NamedCtypeFieldType(CtypeFieldType):
     name: str
@@ -36,7 +37,7 @@ class Import:
 
 @dataclass(frozen=True)
 class Element:
-    pass
+    name: str
 
 
 @dataclass(frozen=True)
@@ -46,20 +47,29 @@ class CtypeStructField:
 
 
 @dataclass(frozen=True)
-class CtypeStruct(Element):
-    name: str
+class CtypeStructDeclaration(Element):
+    pass
+
+
+@dataclass(frozen=True)
+class CtypeStructFieldDeclaration(Element):
     fields: list[CtypeStructField]
 
 
 @dataclass(frozen=True)
+class CtypeStruct(CtypeStructDeclaration, CtypeStructFieldDeclaration):
+    pass
+
+
+@dataclass(frozen=True)
 class EnumEntry(Element):
-    name: str
     value: int
+
 
 @dataclass(frozen=True)
 class Definition(Element):
-    name: str
     for_type: CtypeFieldType
+
 
 @dataclass(frozen=True)
 class Enum(Element):
@@ -72,3 +82,28 @@ class File:
     name: str
     imports: list[Import]
     elements: list[Element]
+
+
+def get_base_types(typ: CtypeFieldType) -> list[CtypeFieldType]:
+    if isinstance(typ, NamedCtypeFieldType):
+        return [typ]
+    elif isinstance(typ, CtypeFieldTypeArray) or isinstance(typ, CtypeFieldPointer):
+        return get_base_types(typ.of)
+    elif isinstance(typ, CtypeFieldFunctionPointer):
+        types = [typ for parameter_type in typ.parameter_types for typ in get_base_types(parameter_type)]
+        types += get_base_types(typ.return_type)
+        return types
+    else:
+        raise Exception("Unsupported type")
+
+
+def get_base_type_names(typ: CtypeFieldType) -> list[str]:
+    base_types = get_base_types(typ)
+    base_type_names: list[str] = []
+    for base_type in base_types:
+        if isinstance(base_type, NamedCtypeFieldType):
+            base_type_names.append(base_type.name)
+        else:
+            raise Exception("Unsupported type")
+
+    return base_type_names

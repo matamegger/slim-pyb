@@ -1,12 +1,15 @@
 import ctypes
 from dataclasses import replace
+from typing import Callable
 
 from astparser import get_base_type_name
-from astparser.model import Module, TypeDefinition, Struct, Enum
+from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
 from astparser.types import *
-from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import
+from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import, Element, \
+    get_base_type_names, CtypeStructDeclaration, CtypeStructFieldDeclaration
 from bindinggenerator.model import File, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
+from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
 primitive_names_to_ctypes = {
     "byte": ctypes.c_byte,
@@ -221,6 +224,85 @@ class BindingGenerator:
         )
 
 
+class ElementArranger:
+    def arrange(
+            self,
+            elements: list[Element],
+            ignore_type_name: Callable[[str], bool],
+            resolve_circular_dependencies: bool = True
+    ) -> list[Element]:
+        sorter = TopologicalSorter()
+        graph = [self._create_node(element, ignore_type_name) for element in elements]
+
+        sorted_nodes: list[Node] = []
+        while True:
+            sorter_result = sorter.sort(graph)
+            if isinstance(sorter_result, CircularDependency):
+                if not resolve_circular_dependencies:
+                    raise Exception("Circular dependency detected")
+                sorted_nodes += sorter_result.sorted_list
+                new_elements: list[Element] = [node.data for node in sorter_result.remaining_graph]
+                new_elements = self._split_one_element(new_elements)
+                graph = [self._create_node(element, ignore_type_name) for element in new_elements]
+            elif isinstance(sorter_result, Sorted):
+                sorted_nodes += sorter_result.sorted_list
+                break
+
+        ordered_elements = [node.data for node in sorted_nodes]
+
+        if len(ordered_elements) != len(elements):
+            raise Exception("Error while sorting elements")
+        return ordered_elements
+
+    def _split_one_element(self, elements: list[Element]) -> list[Element]:
+        splittable_elements = [element for element in elements if self._is_splitable(element)]
+        not_splittable_elements = [element for element in elements if not self._is_splitable(element)]
+
+        if len(splittable_elements) == 0:
+            raise Exception("No element to split")
+
+        return not_splittable_elements + self.__split_element(splittable_elements[0]) + splittable_elements[1:]
+
+    @staticmethod
+    def __split_element(element: Element) -> list[Element]:
+        if isinstance(element, CtypeStruct):
+            return [
+                CtypeStructDeclaration(element.name),
+                CtypeStructFieldDeclaration(element.name, element.fields),
+            ]
+        else:
+            raise Exception(f"That element is not splittable: {element}")
+
+    @staticmethod
+    def _is_splitable(element: Element) -> bool:
+        return isinstance(element, CtypeStruct)
+
+    def _create_node(self, element: Element, to_be_ignored_dependencies: Callable[[str], bool]) -> Node:
+        return Node(
+            element.name,
+            self.__filter(self._get_dependencies(element), to_be_ignored_dependencies),
+            element
+        )
+
+    @staticmethod
+    def __filter(strings: list[str], condition: Callable[[str], bool]) -> list[str]:
+        return [string for string in strings if not condition(string)]
+
+    @staticmethod
+    def _get_dependencies(element: Element) -> list[str]:
+        dependencies: list[str] = []
+        if isinstance(element, EnumElement) or isinstance(element, CtypeStructDeclaration):
+            pass
+        elif isinstance(element, Definition):
+            dependencies = get_base_type_names(element.for_type)
+        elif isinstance(element, CtypeStructFieldDeclaration):
+            dependencies = [type_name for field in element.fields for type_name in get_base_type_names(field.type)]
+        else:
+            raise Exception(f"Unhandled Element {element}")
+
+        return dependencies
+
+
 class PythonBindingFileGenerator:
     _TYPE_REMAPPING_MAP: dict[str, str] = {}
 
@@ -237,10 +319,9 @@ class PythonBindingFileGenerator:
                      for type_definition in module.type_definitions]
         elements += [self._create_element_from_enum(enum) for enum in module.enums]
 
-        elements += [self._create_element_from_struct(
-            self._add_struct_name_prefix_to_inner_structs_name(struct)
-        )
-            for struct in module.structs]
+        structs = [self._add_struct_name_prefix_to_inner_structs_name(struct) for struct in module.structs]
+        structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
+        elements += [self._create_element_from_struct(struct) for struct in structs]
 
         return File(
             name="binding.py",
@@ -286,13 +367,37 @@ class PythonBindingFileGenerator:
         else:
             raise Exception(f"Unhandled type {typ}")
 
+    def __add_prefix_to_struct_base_type(self, typ: Type, prefix: str, condition: Callable[[str], bool]) -> Type:
+        if isinstance(typ, StructType):
+            name = typ.name
+            if condition(name):
+                name = prefix + name
+            return replace(typ, name=name)
+        elif isinstance(typ, NamedType):
+            return typ
+        elif isinstance(typ, Pointer) or isinstance(typ, Array):
+            of = self.__add_prefix_to_struct_base_type(typ.of, prefix, condition)
+            return replace(typ, of=of)
+        else:
+            raise Exception(f"Unhandled type {typ}")
+
     def _add_struct_name_prefix_to_inner_structs_name(self, struct: Struct) -> Struct:
+        old_inner_struct_names: list[str] = [inner_struct.name for inner_struct in struct.inner_structs]
         inner_structs: list[Struct] = []
         for inner_struct in struct.inner_structs:
             inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
             inner_structs.append(self._add_struct_name_prefix_to_inner_structs_name(inner_struct))
 
-        return replace(struct, inner_structs=inner_structs)
+        properties: list[StructProperty] = []
+        for property in struct.properties:
+            new_property_type = self.__add_prefix_to_struct_base_type(
+                property.type,
+                f"{struct.name}_",
+                lambda it: it in old_inner_struct_names
+            )
+            properties.append(replace(property, type=new_property_type))
+
+        return replace(struct, inner_structs=inner_structs, properties=properties)
 
     def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
         return CtypeStruct(

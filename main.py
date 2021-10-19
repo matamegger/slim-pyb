@@ -1,12 +1,14 @@
 import os.path
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from pycparser import parse_file
 
 from astparser.parser import AstParser
-from bindinggenerator.generator import BindingGenerator, primitive_names, PythonBindingFileGenerator
+from bindinggenerator.generator import primitive_names, PythonBindingFileGenerator, ElementArranger
 from bindinggenerator.moduelcleaner import ModuleCleaner
+from bindinggenerator.writer import PythonWriter, FileOutput, CtypesMapper
 
 if __name__ == '__main__':
     main_file_path = os.path.expanduser(sys.argv[1])
@@ -27,7 +29,16 @@ if __name__ == '__main__':
 
     bindingGenerator = PythonBindingFileGenerator()
     generated_python = bindingGenerator.generate(module)
-    print(generated_python)
+    #print(generated_python)
+    arranged_elements = ElementArranger().arrange(generated_python.elements, lambda it: it in primitive_names)
+    generated_python = replace(generated_python, elements=arranged_elements)
+
+    output = FileOutput(output_file_path)
+    mapper = CtypesMapper()
+    writer = PythonWriter(mapper)
+
+    writer.write(generated_python, output)
+
     #output_file = open(output_file_path, "w")
     #output_file.write(generated_python)
     #output_file.close()
