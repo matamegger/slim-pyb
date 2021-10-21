@@ -2,8 +2,8 @@ import ctypes
 from typing import IO
 
 from astparser import get_base_type_name
-from bindinggenerator.model import File, Import, Element, Definition, Enum, CtypeStruct, CtypeStructDeclaration, \
-    CtypeStructFieldDeclaration, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, CtypeFieldTypeArray, \
+from bindinggenerator.model import File, Import, Element, Definition, Enum, CtypeStruct, CtypeStructDefinition, \
+    CtypeStructDeclaration, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, CtypeFieldTypeArray, \
     CtypeFieldFunctionPointer
 
 
@@ -129,7 +129,7 @@ class PythonWriter:
     __STRUCT_DECLARATION_PATTERN = "class {0}(ctypes.Structure):"
     __STRUCT_FIELD_ASSIGNMENT_START = "_fields_ = ["
     __STRUCT_FIELD_ASSIGNMENT_END = "]"
-    __STRUCT_FIELD_PATTERN = "({0}, {1})"
+    __STRUCT_FIELD_PATTERN = "('{0}', {1})"
 
     _mapper: CtypesMapper = None
 
@@ -182,12 +182,12 @@ class PythonWriter:
             output.write(self.__INDENT)
             output.write(self.__STRUCT_FIELD_ASSIGNMENT_END)
             output.new_line()
-        elif isinstance(element, CtypeStructDeclaration):
+        elif isinstance(element, CtypeStructDefinition):
             output.write(self.__STRUCT_DECLARATION_PATTERN.format(element.name))
             output.new_line()
             output.write(self.__INDENT)
             output.write(self.__PASS)
-        elif isinstance(element, CtypeStructFieldDeclaration):
+        elif isinstance(element, CtypeStructDeclaration):
             output.write(element.name)
             output.write(".")
             output.write(self.__STRUCT_FIELD_ASSIGNMENT_START)

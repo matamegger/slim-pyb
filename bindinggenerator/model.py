@@ -47,17 +47,17 @@ class CtypeStructField:
 
 
 @dataclass(frozen=True)
-class CtypeStructDeclaration(Element):
+class CtypeStructDefinition(Element):
     pass
 
 
 @dataclass(frozen=True)
-class CtypeStructFieldDeclaration(Element):
+class CtypeStructDeclaration(Element):
     fields: list[CtypeStructField]
 
 
 @dataclass(frozen=True)
-class CtypeStruct(CtypeStructDeclaration, CtypeStructFieldDeclaration):
+class CtypeStruct(CtypeStructDefinition, CtypeStructDeclaration):
     pass
 
 
