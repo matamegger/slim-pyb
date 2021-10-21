@@ -1,9 +1,7 @@
-import ctypes
 from dataclasses import replace
 from typing import Callable, TypeVar
 
 import bindinggenerator.model
-from astparser import get_base_type_name
 from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
 from astparser.types import *
 from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import, Element, \
@@ -11,7 +9,6 @@ from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElement
 from bindinggenerator.model import File, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
-
 
 
 def _get_name_of_type(typ: CtypeFieldType) -> Optional[str]:
@@ -46,7 +43,8 @@ class PythonCodeElementGraphCreator:
                     if direct_dependency not in self.already_resolved_dependencies:
                         raise Exception("Missing dependency already when building the graph")
                     else:
-                        print(f"No element for {direct_dependency}, but it is already resolved")
+                        # print(f"No element for {direct_dependency}, but it is already resolved")
+                        pass
                 else:
                     dependencies += self._get_recursive_direct_dependencies(found[0], elements)
 
@@ -125,37 +123,40 @@ class ElementArranger:
             resolve_circular_dependencies: bool = True
     ) -> list[Element]:
         sorter = TopologicalSorter()
-        graphCreator = PythonCodeElementGraphCreator()
-        sorter.ignore_names = set(external_dependency_names)
-        graphCreator.already_resolved_dependencies = set(external_dependency_names)
-        graph = graphCreator.create(elements)
+        graph_creator = PythonCodeElementGraphCreator()
+        resolved_dependencies = set(external_dependency_names)
+        sorter.ignore_names = resolved_dependencies
+        graph_creator.already_resolved_dependencies = resolved_dependencies
+        graph = graph_creator.create(elements)
 
         sorted_nodes: list[Node] = []
         splits = 0
         additional_elements = 0
         while True:
             sorter_result = sorter.sort(graph)
-            sorted_nodes = self._flatten(sorter_result.sorted_list)
+            newly_sorted_nodes = self._flatten(sorter_result.sorted_list)
+            sorted_nodes += newly_sorted_nodes
             if isinstance(sorter_result, CircularDependency):
                 if not resolve_circular_dependencies:
                     raise Exception("Circular dependency detected")
-                sorted_elements: list[Element] = [node.data for node in sorted_nodes]
                 new_elements: list[Element] = [node.data for node in sorter_result.remaining_graph]
-                print(sorted_nodes)
-                print(sorter_result.remaining_graph)
                 before = len(new_elements)
                 new_elements = self._split_one_element(new_elements)
                 splits += 1
                 additional_elements += len(new_elements) - before
-                graph = graphCreator.create(sorted_elements + new_elements)  # self._create_node_list(new_elements)
+                resolved_dependencies = resolved_dependencies.union(self._flatten([node.keys
+                                                                                   for node in newly_sorted_nodes]))
+                sorter.ignore_names = resolved_dependencies
+                graph_creator.already_resolved_dependencies = resolved_dependencies
+                graph = graph_creator.create(new_elements)
             elif isinstance(sorter_result, Sorted):
                 break
 
         ordered_elements = [node.data for node in sorted_nodes]
 
         if len(ordered_elements) != len(elements) + additional_elements:
-            raise Exception(
-                f"Error while sorting elements had {len(elements) + additional_elements} but now are {len(ordered_elements)}")
+            raise Exception("Error while sorting elements had " +
+                            f"{len(elements) + additional_elements} but now are {len(ordered_elements)}")
         return ordered_elements
 
     T = TypeVar('T')
@@ -163,7 +164,6 @@ class ElementArranger:
     @staticmethod
     def _flatten(list_in_list: list[list[T]]) -> list[T]:
         return [item for sublist in list_in_list for item in sublist]
-
 
     def _split_one_element(self, elements: list[Element]) -> list[Element]:
         splittable_elements = [element for element in elements if self._is_splitable(element)]
@@ -292,7 +292,8 @@ class PythonBindingFileGenerator:
                     for property in struct.properties]
         )
 
-    def _create_element_from_enum(self, enum: Enum) -> EnumElement:
+    @staticmethod
+    def _create_element_from_enum(enum: Enum) -> EnumElement:
         return EnumElement(
             name=enum.name,
             entries=[EnumElementEntry(name=entry.name, value=entry.value) for entry in enum.entries]
