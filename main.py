@@ -30,7 +30,7 @@ if __name__ == '__main__':
     bindingGenerator = PythonBindingFileGenerator()
     generated_python = bindingGenerator.generate(module)
     #print(generated_python)
-    arranged_elements = ElementArranger().arrange(generated_python.elements, lambda it: it in primitive_names)
+    arranged_elements = ElementArranger().arrange(generated_python.elements, primitive_names)
     generated_python = replace(generated_python, elements=arranged_elements)
 
     output = FileOutput(output_file_path)

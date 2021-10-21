@@ -1,12 +1,13 @@
 import ctypes
 from dataclasses import replace
-from typing import Callable
+from typing import Callable, TypeVar
 
+import bindinggenerator.model
 from astparser import get_base_type_name
 from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
 from astparser.types import *
 from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import, Element, \
-    get_base_type_names, CtypeStructDeclaration, CtypeStructFieldDeclaration
+    get_base_type_names, CtypeStructDefinition, CtypeStructDeclaration
 from bindinggenerator.model import File, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
@@ -45,214 +46,156 @@ primitive_names_to_ctypes = {
 
 primitive_names = set([k for k, v in primitive_names_to_ctypes.items()])
 
+def _get_name_of_type(typ: CtypeFieldType) -> Optional[str]:
+    if isinstance(typ, NamedCtypeFieldType):
+        return typ.name
+    else:
+        return None
 
-def _ctype_to_string(ctype) -> str:
-    if ctype is None:
-        return "None"
-    return f"ctypes.{ctype.__name__}"
 
+class PythonCodeElementGraphCreator:
+    already_resolved_dependencies: set[str] = set()
 
-class CtypesMapper:
-    _POINTER_PATTERN = """ctypes.POINTER({0})"""
-    _ARRAY_PATTERN = """({0}*{1})"""
-    _FUNCTION_PATTERN = """ctypes.CFUNCTYPE({0}, {1})"""
-    _primitive_mappings: dict[str, str] = {k: _ctype_to_string(v) for k, v in primitive_names_to_ctypes.items()}
-    _void_pointer = _ctype_to_string(ctypes.c_void_p)
+    def create(self, elements: list[Element]) -> list[Node]:
+        return [self._create_node(element, elements) for element in elements]
 
-    additional_mappings: dict[str, str] = {}
+    @staticmethod
+    def _get_elements_by_name(name: str, elements: list[Element]) -> list[Element]:
+        return list(filter(lambda it: it.name == name, elements))
 
-    def has_primitive_base(self, typ: Type) -> bool:
-        return self.is_primitive_type_name(get_base_type_name(typ))
+    def _get_recursive_direct_dependencies(self, element: Element, elements: list[Element]):
+        if isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeStructDeclaration) \
+                or isinstance(element, CtypeStruct):
+            return [self._mark_as_direct_dependency_name(element.name)]
+        elif isinstance(element, bindinggenerator.model.Enum):
+            return []
+        elif isinstance(element, Definition):
+            direct_dependency = _get_name_of_type(element.for_type)
+            dependencies = [element.name]
+            if direct_dependency is not None:
+                found = self._get_elements_by_name(direct_dependency, elements)
+                if len(found) == 0:
+                    if direct_dependency not in self.already_resolved_dependencies:
+                        raise Exception("Missing dependency already when building the graph")
+                    else:
+                        print(f"No element for {direct_dependency}, but it is already resolved")
+                else:
+                    dependencies += self._get_recursive_direct_dependencies(found[0], elements)
 
-    def is_primitive_type_name(self, name: str) -> bool:
-        return name in self._primitive_mappings
+            return dependencies
+        else:
+            raise Exception("Unhandled case")
 
-    def get_mapping(self, typ: Type) -> str:
-        if isinstance(typ, NamedType):
-            mapping = self.additional_mappings.get(typ.name)
-            if mapping is not None:
-                return mapping
-            mapping = self._primitive_mappings.get(typ.name)
-            if mapping is not None:
-                return mapping
-            return typ.name
-        elif isinstance(typ, Pointer):
-            if isinstance(typ.of, NamedType) and typ.of.name == "void":
-                return self._void_pointer
-            elif isinstance(typ.of, FunctionType):
-                # We do not need to wrap the function in a pointer
-                # as it is always a function pointer
-                return self.get_mapping(typ.of)
-            return self._pointer(self.get_mapping(typ.of))
-        elif isinstance(typ, StructType):
-            mapping = self.additional_mappings.get(typ.name)
-            if mapping is not None:
-                return mapping
-            return typ.name
-        elif isinstance(typ, Array):
-            return self._array(self.get_mapping(typ.of), typ.size)
-        elif isinstance(typ, FunctionType):
-            return self._function(
-                return_type=self.get_mapping(typ.return_type),
-                parameter_types=[self.get_mapping(parameter.type) for parameter in typ.params]
+    def _create_node(
+            self,
+            element: Element,
+            elements: list[Element]
+    ) -> Node:
+        if isinstance(element, Definition):
+            return Node(
+                keys=[element.name],
+                dependencies=get_base_type_names(element.for_type),
+                data=element
+            )
+        elif isinstance(element, CtypeStructDeclaration):
+            keys = [self._mark_as_direct_dependency_name(element.name)]
+            dependencies = self._get_dependencies(element)
+            direct_dependencies = self._get_direct_ctype_dependencies(element)
+            dependencies = [dependency
+                            for dependency in dependencies
+                            if dependency not in direct_dependencies and
+                            dependency not in self.already_resolved_dependencies]
+            dependencies += [d
+                             for dependency in direct_dependencies
+                             for element in self._get_elements_by_name(dependency, elements)
+                             for d in self._get_recursive_direct_dependencies(element, elements)]
+            if not isinstance(element, CtypeStruct):
+                dependencies.append(element.name)
+            else:
+                keys.append(element.name)
+            return Node(
+                keys=keys,
+                dependencies=list(set(dependencies)),
+                data=element
+            )
+        elif isinstance(element, CtypeStructDefinition):
+            return Node(
+                keys=[element.name],
+                dependencies=[],
+                data=element
+            )
+        elif isinstance(element, bindinggenerator.model.Enum):
+            return Node(
+                keys=[element.name],
+                dependencies=[],
+                data=element
             )
         else:
-            raise Exception(f"Unhandled case {typ}")
+            raise Exception(f"Unhandled element type {element}")
 
     @staticmethod
-    def _array(of: str, size: int):
-        return CtypesMapper._ARRAY_PATTERN.format(of, size)
+    def _mark_as_direct_dependency_name(regular_name: str) -> str:
+        return f"__{regular_name}__complete"
 
     @staticmethod
-    def _pointer(of: str) -> str:
-        return CtypesMapper._POINTER_PATTERN.format(of)
+    def _get_direct_ctype_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
+        return [_get_name_of_type(field.type) for field in struct_declaration.fields
+                if _get_name_of_type(field.type) is not None]
 
     @staticmethod
-    def _function(return_type: str, parameter_types: list[str]) -> str:
-        return CtypesMapper._FUNCTION_PATTERN.format(return_type, ", ".join(parameter_types))
-
-
-def _dicts_have_common_key(a: dict, b: dict) -> bool:
-    for key in a.keys():
-        if key in b:
-            return True
-    return False
-
-
-class BindingGenerator:
-    _TYPE_DEFINITION_PATTER = """{0} = {1}"""
-    _STRUCT_PATTERN = """class {0}(ctypes.Structure):
-        {1}
-        _fields_ = [
-{2}
-        ]
-    """
-    _STRUCT_FIELD_PATTERN = "            (\"{0}\", {1})"
-    _ENUM_PATTER = """class {0}(Enum):
-{1}
-     """
-    _ENUM_ENTRY_PATTERN = """     {0} = {1}"""
-    _MODEL_CLASS_PATTERN = """"""
-    _imports: list[str] = [
-        "import ctypes",
-        "from enum import Enum"
-    ]
-
-    def generate(self, module: Module) -> str:
-        ctypes_mapper = CtypesMapper()
-        enum_type_definitions = self._create_primitive_type_definitions_for_enums(module.enums)
-        self._register_additional_mappings_for_enums(ctypes_mapper, module.enums)
-        output = "\n".join(self._imports) + "\n\n"
-        output += self.generate_structs(module.structs, ctypes_mapper) + "\n\n"
-        output += self.generate_enums(module.enums, ctypes_mapper) + "\n\n"
-        output += self.generate_type_definitions(
-            module.type_definitions + enum_type_definitions,
-            ctypes_mapper
-        ) + "\n\n"
-        return output
-
-    def generate_type_definitions(self, type_definitions: list[TypeDefinition], ctypes_mapper: CtypesMapper) -> str:
-        definitions: list[str] = []
-        for type_definition in type_definitions:
-            definitions.append(self._convert_type_definition(type_definition, ctypes_mapper))
-        return '\n'.join(definitions)
-
-    def generate_structs(self, structs: list[Struct], ctypes_mapper: CtypesMapper) -> str:
-        structs_strings: list[str] = []
-        for struct in structs:
-            structs_strings.append(self._convert_struct(struct, ctypes_mapper))
-        return '\n'.join(structs_strings)
-
-    def generate_enums(self, enums: list[Enum], ctypes_mapper: CtypesMapper) -> str:
-        enum_strings: list[str] = []
-        for enum in enums:
-            enum_strings.append(self._convert_enum(enum))
-        return '\n'.join(enum_strings)
-
-    @staticmethod
-    def _ctypes_enum_name(enum: Enum) -> str:
-        return f"enum_{enum.name}"
-
-    def _register_additional_mappings_for_enums(self, ctypes_mapper: CtypesMapper, enums: list[Enum]):
-        enum_mappings = {enum.name: self._ctypes_enum_name(enum) for enum in enums}
-        ctypes_mapper.additional_mappings.update(enum_mappings)
-
-    def _create_primitive_type_definitions_for_enums(self, enums: list[Enum]) -> list[TypeDefinition]:
-        return [TypeDefinition(
-            name=self._ctypes_enum_name(enum),
-            for_type=NamedType(name="int", constant=False)
-        ) for enum in enums]
-
-    def _convert_struct(self, struct: Struct, ctypes_mapper: CtypesMapper, name_prefix: str = "") -> str:
-        struct_name = name_prefix + struct.name
-        output: str = ""
-        for inner_struct in struct.inner_structs:
-            inner_name_prefix = f"{struct_name}_"
-            output += self._convert_struct(inner_struct, ctypes_mapper, inner_name_prefix)
-            output += "\n\n"
-            ctypes_mapper.additional_mappings[inner_struct.name] = inner_name_prefix + inner_struct.name
-
-        output += self._STRUCT_PATTERN.format(
-            struct_name,
-            "",
-            ", \n".join([self._STRUCT_FIELD_PATTERN.format(
-                property.name,
-                ctypes_mapper.get_mapping(property.type)
-            ) for property in struct.properties])
-        )
-
-        for inner_struct in struct.inner_structs:
-            del ctypes_mapper.additional_mappings[inner_struct.name]
-
-        return output
-
-    def _convert_enum(self, enum: Enum) -> str:
-        output = self._ENUM_PATTER.format(
-            enum.name,
-            "\n".join([self._ENUM_ENTRY_PATTERN.format(
-                entry.name,
-                entry.value
-            ) for entry in enum.entries])
-        )
-        return output
-
-    @staticmethod
-    def _convert_type_definition(type_definition: TypeDefinition, ctypes_mapper: CtypesMapper) -> str:
-        return BindingGenerator._TYPE_DEFINITION_PATTER.format(
-            type_definition.name,
-            ctypes_mapper.get_mapping(type_definition.for_type)
-        )
+    def _get_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
+        return [type_name
+                for field in struct_declaration.fields
+                for type_name in get_base_type_names(field.type)]
 
 
 class ElementArranger:
     def arrange(
             self,
             elements: list[Element],
-            ignore_type_name: Callable[[str], bool],
+            external_dependency_names: list[str],
             resolve_circular_dependencies: bool = True
     ) -> list[Element]:
         sorter = TopologicalSorter()
-        graph = [self._create_node(element, ignore_type_name) for element in elements]
+        graphCreator = PythonCodeElementGraphCreator()
+        sorter.ignore_names = set(external_dependency_names)
+        graphCreator.already_resolved_dependencies = set(external_dependency_names)
+        graph = graphCreator.create(elements)
 
         sorted_nodes: list[Node] = []
+        splits = 0
+        additional_elements = 0
         while True:
             sorter_result = sorter.sort(graph)
+            sorted_nodes = self._flatten(sorter_result.sorted_list)
             if isinstance(sorter_result, CircularDependency):
                 if not resolve_circular_dependencies:
                     raise Exception("Circular dependency detected")
-                sorted_nodes += sorter_result.sorted_list
+                sorted_elements: list[Element] = [node.data for node in sorted_nodes]
                 new_elements: list[Element] = [node.data for node in sorter_result.remaining_graph]
+                print(sorted_nodes)
+                print(sorter_result.remaining_graph)
+                before = len(new_elements)
                 new_elements = self._split_one_element(new_elements)
-                graph = [self._create_node(element, ignore_type_name) for element in new_elements]
+                splits += 1
+                additional_elements += len(new_elements) - before
+                graph = graphCreator.create(sorted_elements + new_elements)  # self._create_node_list(new_elements)
             elif isinstance(sorter_result, Sorted):
-                sorted_nodes += sorter_result.sorted_list
                 break
 
         ordered_elements = [node.data for node in sorted_nodes]
 
-        if len(ordered_elements) != len(elements):
-            raise Exception("Error while sorting elements")
+        if len(ordered_elements) != len(elements) + additional_elements:
+            raise Exception(
+                f"Error while sorting elements had {len(elements) + additional_elements} but now are {len(ordered_elements)}")
         return ordered_elements
+
+    T = TypeVar('T')
+
+    @staticmethod
+    def _flatten(list_in_list: list[list[T]]) -> list[T]:
+        return [item for sublist in list_in_list for item in sublist]
+
 
     def _split_one_element(self, elements: list[Element]) -> list[Element]:
         splittable_elements = [element for element in elements if self._is_splitable(element)]
@@ -267,8 +210,8 @@ class ElementArranger:
     def __split_element(element: Element) -> list[Element]:
         if isinstance(element, CtypeStruct):
             return [
-                CtypeStructDeclaration(element.name),
-                CtypeStructFieldDeclaration(element.name, element.fields),
+                CtypeStructDefinition(element.name),
+                CtypeStructDeclaration(element.name, element.fields),
             ]
         else:
             raise Exception(f"That element is not splittable: {element}")
@@ -276,31 +219,6 @@ class ElementArranger:
     @staticmethod
     def _is_splitable(element: Element) -> bool:
         return isinstance(element, CtypeStruct)
-
-    def _create_node(self, element: Element, to_be_ignored_dependencies: Callable[[str], bool]) -> Node:
-        return Node(
-            element.name,
-            self.__filter(self._get_dependencies(element), to_be_ignored_dependencies),
-            element
-        )
-
-    @staticmethod
-    def __filter(strings: list[str], condition: Callable[[str], bool]) -> list[str]:
-        return [string for string in strings if not condition(string)]
-
-    @staticmethod
-    def _get_dependencies(element: Element) -> list[str]:
-        dependencies: list[str] = []
-        if isinstance(element, EnumElement) or isinstance(element, CtypeStructDeclaration):
-            pass
-        elif isinstance(element, Definition):
-            dependencies = get_base_type_names(element.for_type)
-        elif isinstance(element, CtypeStructFieldDeclaration):
-            dependencies = [type_name for field in element.fields for type_name in get_base_type_names(field.type)]
-        else:
-            raise Exception(f"Unhandled Element {element}")
-
-        return dependencies
 
 
 class PythonBindingFileGenerator:
