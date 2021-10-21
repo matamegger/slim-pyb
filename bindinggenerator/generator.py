@@ -189,7 +189,7 @@ class ElementArranger:
         return isinstance(element, CtypeStruct)
 
 
-class PythonBindingFileGenerator:
+class PythonTypeBindingFileGenerator:
     _TYPE_REMAPPING_MAP: dict[str, str] = {}
 
     def generate(self, module: Module) -> File:
