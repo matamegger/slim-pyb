@@ -6,7 +6,8 @@ from pathlib import Path
 from pycparser import parse_file
 
 from astparser.parser import AstParser
-from bindinggenerator.generator import primitive_names, PythonBindingFileGenerator, ElementArranger
+from bindinggenerator import primitive_names
+from bindinggenerator.generator import PythonBindingFileGenerator, ElementArranger
 from bindinggenerator.moduelcleaner import ModuleCleaner
 from bindinggenerator.writer import PythonWriter, FileOutput, CtypesMapper
 
