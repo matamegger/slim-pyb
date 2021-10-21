@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Optional
 
 
@@ -13,9 +13,11 @@ class Node:
 class SorterResult:
     sorted_list: list[list[Node]]
 
+
 @dataclass(frozen=True)
 class CircularDependency(SorterResult):
     remaining_graph: list[Node]
+
 
 @dataclass(frozen=True)
 class Sorted(SorterResult):
@@ -59,12 +61,3 @@ class TopologicalSorter:
     @staticmethod
     def _filter_dependencies(dependencies: list[str], names_to_be_ignored: set[str]):
         return [dependency for dependency in dependencies if dependency not in names_to_be_ignored]
-
-    # TODO remove
-    # @staticmethod
-    # def _remove_nodes_from_dependencies(node: Node, to_be_removed_dependencies: list[str]) -> Node:
-    #     return replace(node,
-    #                    dependencies=[dependency
-    #                                  for dependency in node.dependencies
-    #                                  if dependency not in to_be_removed_dependencies]
-    #                    )
