@@ -83,6 +83,36 @@ class BindingFile:
     imports: list[Import]
     elements: list[Element]
 
+@dataclass(frozen=True)
+class Parameter:
+    name: str
+    type: CtypeFieldType
+
+
+@dataclass(frozen=True)
+class SystemMethod:
+    name: str
+    return_type: CtypeFieldType
+    parameter: list[Parameter]
+    name_in_library: str
+
+
+@dataclass(frozen=True)
+class SystemField:
+    name: str
+    type: CtypeFieldType
+    name_in_library: str
+
+
+@dataclass(frozen=True)
+class System:
+    name: str
+    binary_basename: str
+    imports: list[Import]
+    methods: list[SystemMethod]
+    fields: list[SystemField]
+    bindingFiles: list[BindingFile]
+
 
 def get_base_types(typ: CtypeFieldType) -> list[CtypeFieldType]:
     if isinstance(typ, NamedCtypeFieldType):
