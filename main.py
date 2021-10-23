@@ -7,8 +7,8 @@ from pycparser import parse_file
 
 from astparser.parser import AstParser
 from bindinggenerator import primitive_names
-from bindinggenerator.generator import PythonTypeBindingFileGenerator, ElementArranger
-from bindinggenerator.moduelcleaner import ModuleCleaner
+from bindinggenerator.generator import PythonBindingFileGenerator, ElementArranger
+from astparser.moduelcleaner import ModuleCleaner
 from bindinggenerator.writer import PythonWriter, FileOutput, CtypesMapper
 
 if __name__ == '__main__':
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     module = astParser.parse(ast)
     module = moduleCleaner.remove_not_used_elements(module)
 
-    bindingGenerator = PythonTypeBindingFileGenerator()
+    bindingGenerator = PythonBindingFileGenerator()
     generated_python = bindingGenerator.generate(module)
     arranged_elements = ElementArranger().arrange(generated_python.elements, primitive_names)
     generated_python = replace(generated_python, elements=arranged_elements)

@@ -6,7 +6,7 @@ from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
 from astparser.types import *
 from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import, Element, \
     get_base_type_names, CtypeStructDefinition, CtypeStructDeclaration
-from bindinggenerator.model import File, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
+from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
@@ -189,10 +189,10 @@ class ElementArranger:
         return isinstance(element, CtypeStruct)
 
 
-class PythonTypeBindingFileGenerator:
+class PythonBindingFileGenerator:
     _TYPE_REMAPPING_MAP: dict[str, str] = {}
 
-    def generate(self, module: Module) -> File:
+    def generate(self, module: Module) -> BindingFile:
         imports = [
             Import(None, ["ctypes"]),
             Import("enum", ["Enum"])
@@ -209,7 +209,7 @@ class PythonTypeBindingFileGenerator:
         structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
         elements += [self._create_element_from_struct(struct) for struct in structs]
 
-        return File(
+        return BindingFile(
             name="binding.py",
             imports=imports,
             elements=elements
