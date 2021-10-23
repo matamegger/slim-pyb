@@ -4,10 +4,10 @@ from typing import Callable, TypeVar
 import bindinggenerator.model
 from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
 from astparser.types import *
-from bindinggenerator.model import Enum as EnumElement, EnumEntry as EnumElementEntry, Definition, Import, Element, \
-    get_base_type_names, CtypeStructDefinition, CtypeStructDeclaration
 from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
-    CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer
+    CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
+    EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names, CtypeStructDefinition, \
+    CtypeStructDeclaration
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
 
@@ -189,10 +189,44 @@ class ElementArranger:
         return isinstance(element, CtypeStruct)
 
 
-class PythonBindingFileGenerator:
+class AstTypeConverter:
+    type_remapping_map: dict[str, str] = {}
     _TYPE_REMAPPING_MAP: dict[str, str] = {}
 
-    def generate(self, module: Module) -> BindingFile:
+    def convert(self, typ: Type) -> CtypeFieldType:
+        if isinstance(typ, StructType) or isinstance(typ, NamedType):
+            name = typ.name
+            if name in self._TYPE_REMAPPING_MAP:
+                name = self._TYPE_REMAPPING_MAP[name]
+            return NamedCtypeFieldType(
+                name=name
+            )
+        elif isinstance(typ, Pointer):
+            # We do not need to wrap the function in a pointer
+            # as it is always a function pointer
+            # TODO actually this is a design flaw in the parser !?
+            if isinstance(typ.of, FunctionType):
+                return CtypeFieldFunctionPointer(
+                    return_type=self.convert(typ.of.return_type),
+                    parameter_types=[self.convert(parameter.type) for parameter in typ.of.params]
+                )
+            return CtypeFieldPointer(
+                of=self.convert(typ.of)
+            )
+        elif isinstance(typ, Array):
+            return CtypeFieldTypeArray(
+                of=self.convert(typ.of),
+                size=typ.size
+            )
+        else:
+            raise Exception(f"Unhandled type {typ}")
+
+
+class PythonBindingFileGenerator:
+    __type_converter: AstTypeConverter
+
+    def generate(self, module: Module, name: str, type_converter: AstTypeConverter) -> BindingFile:
+        self.__type_converter = type_converter
         imports = [
             Import(None, ["ctypes"]),
             Import("enum", ["Enum"])
@@ -200,7 +234,7 @@ class PythonBindingFileGenerator:
         enum_type_definitions = self._create_primitive_type_definitions_for_enums(module.enums)
         elements = [self._create_element_from_type_definition(type_definition)
                     for type_definition in enum_type_definitions]
-        self._TYPE_REMAPPING_MAP = {enum.name: self._ctypes_enum_name(enum) for enum in module.enums}
+        type_converter.type_remapping_map = {enum.name: self._ctypes_enum_name(enum) for enum in module.enums}
         elements += [self._create_element_from_type_definition(type_definition)
                      for type_definition in module.type_definitions]
         elements += [self._create_element_from_enum(enum) for enum in module.enums]
@@ -210,7 +244,7 @@ class PythonBindingFileGenerator:
         elements += [self._create_element_from_struct(struct) for struct in structs]
 
         return BindingFile(
-            name="binding.py",
+            name=f"{name}.py",
             imports=imports,
             elements=elements
         )
@@ -226,32 +260,7 @@ class PythonBindingFileGenerator:
         ) for enum in enums]
 
     def _convert_type(self, typ: Type) -> CtypeFieldType:
-        if isinstance(typ, StructType) or isinstance(typ, NamedType):
-            name = typ.name
-            if name in self._TYPE_REMAPPING_MAP:
-                name = self._TYPE_REMAPPING_MAP[name]
-            return NamedCtypeFieldType(
-                name=name
-            )
-        elif isinstance(typ, Pointer):
-            # We do not need to wrap the function in a pointer
-            # as it is always a function pointer
-            # TODO actually this is a design flaw in the parser !?
-            if isinstance(typ.of, FunctionType):
-                return CtypeFieldFunctionPointer(
-                    return_type=self._convert_type(typ.of.return_type),
-                    parameter_types=[self._convert_type(parameter.type) for parameter in typ.of.params]
-                )
-            return CtypeFieldPointer(
-                of=self._convert_type(typ.of)
-            )
-        elif isinstance(typ, Array):
-            return CtypeFieldTypeArray(
-                of=self._convert_type(typ.of),
-                size=typ.size
-            )
-        else:
-            raise Exception(f"Unhandled type {typ}")
+        return self.__type_converter.convert(typ)
 
     def __add_prefix_to_struct_base_type(self, typ: Type, prefix: str, condition: Callable[[str], bool]) -> Type:
         if isinstance(typ, StructType):
