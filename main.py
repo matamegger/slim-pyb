@@ -1,19 +1,18 @@
 import os.path
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 from pycparser import parse_file
 
+from astparser.moduelcleaner import ModuleCleaner
 from astparser.parser import AstParser
 from bindinggenerator import primitive_names
-from bindinggenerator.generator import PythonBindingFileGenerator, ElementArranger
-from astparser.moduelcleaner import ModuleCleaner
-from bindinggenerator.writer import PythonWriter, FileOutput, CtypesMapper
+from bindinggenerator.systemgenerator import SystemGenerator
+from bindinggenerator.writer import PythonBindingWriter, FileOutput, CtypesMapper, SystemWriter
 
 if __name__ == '__main__':
     main_file_path = os.path.expanduser(sys.argv[1])
-    output_file_path = os.path.expanduser(sys.argv[2])
+    output_path = os.path.expanduser(sys.argv[2])
     parent_dir = Path(main_file_path).parent.absolute()
 
     ast = parse_file(main_file_path,
@@ -28,17 +27,17 @@ if __name__ == '__main__':
     module = astParser.parse(ast)
     module = moduleCleaner.remove_not_used_elements(module)
 
-    bindingGenerator = PythonBindingFileGenerator()
-    generated_python = bindingGenerator.generate(module)
-    arranged_elements = ElementArranger().arrange(generated_python.elements, primitive_names)
-    generated_python = replace(generated_python, elements=arranged_elements)
+    system_generator = SystemGenerator()
+    system = system_generator.generate(
+        module,
+        name="SpringMassDamper",
+        binary_basename="springmassdamper"
+    )
 
-    output = FileOutput(output_file_path)
-    mapper = CtypesMapper()
-    writer = PythonWriter(mapper)
+    ctypes_mapper = CtypesMapper()
+    system_writer = SystemWriter(ctypes_mapper)
+    system_writer.write(system, output_path, PythonBindingWriter(ctypes_mapper))
 
-    writer.write(generated_python, output)
-
-    #output_file = open(output_file_path, "w")
-    #output_file.write(generated_python)
-    #output_file.close()
+    # output_file = open(output_file_path, "w")
+    # output_file.write(generated_python)
+    # output_file.close()
