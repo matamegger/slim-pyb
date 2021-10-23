@@ -78,7 +78,7 @@ class Enum(Element):
 
 
 @dataclass(frozen=True)
-class File:
+class BindingFile:
     name: str
     imports: list[Import]
     elements: list[Element]

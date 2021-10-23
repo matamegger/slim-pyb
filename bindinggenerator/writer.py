@@ -2,7 +2,7 @@ import ctypes
 from typing import IO
 
 from bindinggenerator import primitive_names_to_ctypes
-from bindinggenerator.model import File, Import, Element, Definition, Enum, CtypeStruct, CtypeStructDefinition, \
+from bindinggenerator.model import BindingFile, Import, Element, Definition, Enum, CtypeStruct, CtypeStructDefinition, \
     CtypeStructDeclaration, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, CtypeFieldTypeArray, \
     CtypeFieldFunctionPointer, CtypeStructField
 
@@ -105,7 +105,7 @@ class PythonWriter:
     def __init__(self, ctypes_mapper: CtypesMapper):
         self._mapper = ctypes_mapper
 
-    def write(self, file: File, output: Output):
+    def write(self, file: BindingFile, output: Output):
         for imprt in file.imports:
             output.write(self._convert_to_text(imprt))
             output.new_line()
