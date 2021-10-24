@@ -50,6 +50,8 @@ class SimulinkModelCompiler:
         os.remove(join(path, self._MAKEFILE_NAME))
 
     def compile(self, path: str, output_path: str, name: str, do_not_create_makefile: bool = False):
+        path = os.path.abspath(os.path.expanduser(path))
+        output_path = os.path.abspath(os.path.expanduser(output_path))
         if not do_not_create_makefile:
             self._setup(path)
         self._compile(Platform.LINUX, path, output_path, name)
