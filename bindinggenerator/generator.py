@@ -191,13 +191,12 @@ class ElementArranger:
 
 class AstTypeConverter:
     type_remapping_map: dict[str, str] = {}
-    _TYPE_REMAPPING_MAP: dict[str, str] = {}
 
     def convert(self, typ: Type) -> CtypeFieldType:
         if isinstance(typ, StructType) or isinstance(typ, NamedType):
             name = typ.name
-            if name in self._TYPE_REMAPPING_MAP:
-                name = self._TYPE_REMAPPING_MAP[name]
+            if name in self.type_remapping_map:
+                name = self.type_remapping_map[name]
             return NamedCtypeFieldType(
                 name=name
             )
