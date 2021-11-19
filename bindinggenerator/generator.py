@@ -1,8 +1,8 @@
 from dataclasses import replace
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, Union
 
 import bindinggenerator.model
-from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union
+from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion
 from astparser.types import *
 from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
@@ -30,7 +30,8 @@ class PythonCodeElementGraphCreator:
 
     def _get_recursive_direct_dependencies(self, element: Element, elements: list[Element]):
         if isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeStructDeclaration) \
-                or isinstance(element, CtypeStruct):
+                or isinstance(element, CtypeStruct) or isinstance(element, CtypeUnionDefinition) \
+                or isinstance(element, CtypeUnionDeclaration) or isinstance(element, CtypeUnion):
             return [self._mark_as_direct_dependency_name(element.name)]
         elif isinstance(element, bindinggenerator.model.Enum):
             return []
@@ -63,7 +64,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=get_base_type_names(element.for_type),
                 data=element
             )
-        elif isinstance(element, CtypeStructDeclaration):
+        elif isinstance(element, CtypeStructDeclaration) or isinstance(element, CtypeUnionDeclaration):
             keys = [self._mark_as_direct_dependency_name(element.name)]
             dependencies = self._get_dependencies(element)
             direct_dependencies = self._get_direct_ctype_dependencies(element)
@@ -84,7 +85,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=list(set(dependencies)),
                 data=element
             )
-        elif isinstance(element, CtypeStructDefinition):
+        elif isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeUnionDefinition):
             return Node(
                 keys=[element.name],
                 dependencies=[],
@@ -104,14 +105,14 @@ class PythonCodeElementGraphCreator:
         return f"__{regular_name}__complete"
 
     @staticmethod
-    def _get_direct_ctype_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
-        return [_get_name_of_type(field.type) for field in struct_declaration.fields
+    def _get_direct_ctype_dependencies(declaration: Union[CtypeStructDeclaration, CtypeUnionDeclaration]) -> list[str]:
+        return [_get_name_of_type(field.type) for field in declaration.fields
                 if _get_name_of_type(field.type) is not None]
 
     @staticmethod
-    def _get_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
+    def _get_dependencies(declaration: Union[CtypeStructDeclaration, CtypeUnionDeclaration]) -> list[str]:
         return [type_name
-                for field in struct_declaration.fields
+                for field in declaration.fields
                 for type_name in get_base_type_names(field.type)]
 
 
@@ -198,7 +199,7 @@ class AstTypeConverter:
     type_remapping_map: dict[str, str] = {}
 
     def convert(self, typ: Type) -> CtypeFieldType:
-        if isinstance(typ, StructType) or isinstance(typ, NamedType):
+        if isinstance(typ, StructType) or isinstance(typ, NamedType) or isinstance(typ, UnionType):
             name = typ.name
             if name in self.type_remapping_map:
                 name = self.type_remapping_map[name]
@@ -246,6 +247,7 @@ class PythonBindingFileGenerator:
         structs = [self._add_struct_name_prefix_to_inner_struct_and_union_names(struct) for struct in module.structs]
         structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
         elements += [self._create_element_from_struct(struct) for struct in structs]
+        elements += [self._create_element_from_union(union) for struct in structs for union in struct.inner_unions]
 
         return BindingFile(
             name=f"{name}.py",
@@ -277,6 +279,8 @@ class PythonBindingFileGenerator:
         elif isinstance(typ, Pointer) or isinstance(typ, Array):
             of = self.__add_prefix_to_struct_base_type(typ.of, prefix, condition)
             return replace(typ, of=of)
+        elif isinstance(typ, FunctionType):
+            return typ
         else:
             raise Exception(f"Unhandled type {typ}")
 
@@ -284,7 +288,7 @@ class PythonBindingFileGenerator:
         old_inner_struct_names: list[str] = [inner_struct.name for inner_struct in struct.inner_structs]
         old_inner_union_names: list[str] = [inner_union.name for inner_union in struct.inner_unions]
         inner_structs: list[Struct] = []
-        inner_unions: list[Union] = []
+        inner_unions: list[AstParserUnion] = []
         for inner_struct in struct.inner_structs:
             inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
             inner_structs.append(self._add_struct_name_prefix_to_inner_struct_and_union_names(inner_struct))
@@ -310,7 +314,7 @@ class PythonBindingFileGenerator:
                     for property in struct.properties]
         )
 
-    def _create_element_from_union(self, union: Union) -> CtypeUnion:
+    def _create_element_from_union(self, union: AstParserUnion) -> CtypeUnion:
         return CtypeUnion(
             name=union.name,
             fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
