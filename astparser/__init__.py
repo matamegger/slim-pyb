@@ -1,4 +1,4 @@
-from astparser.types import Type, NamedType, Pointer, StructType, Array, FunctionType
+from astparser.types import Type, NamedType, Pointer, StructType, Array, FunctionType, UnionType
 
 
 def get_base_type(typ: Type) -> Type:
@@ -10,6 +10,8 @@ def get_base_type(typ: Type) -> Type:
         return get_base_type(typ.of)
     elif isinstance(typ, StructType):
         return typ
+    elif isinstance(typ, UnionType):
+        return typ
     elif isinstance(typ, FunctionType):
         return typ
     else:
@@ -18,6 +20,6 @@ def get_base_type(typ: Type) -> Type:
 
 def get_base_type_name(typ: Type) -> str:
     base_type = get_base_type(typ)
-    if isinstance(base_type, NamedType) or isinstance(base_type, StructType):
+    if isinstance(base_type, NamedType) or isinstance(base_type, StructType) or isinstance(base_type, UnionType):
         return base_type.name
     raise Exception("Can not get base type name")
