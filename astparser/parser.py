@@ -82,8 +82,40 @@ def _parse_type(node: Node) -> Type:
     else:
         raise Exception(f"Unexpected type {type(node)}{node}")
 
+class _UnionParser:
+    def parse_union(self, node: c_ast.Union) -> Union:
+        name = node.name
+        properties: list[Property] = []
+
+        property_declarations = node.decls
+        if property_declarations is None:
+            property_declarations = []
+        for declaration in property_declarations:
+            if not isinstance(declaration, Decl):
+                raise Exception(f"Expected Decl but is {type(declaration)}")
+            property = Property(
+                name=declaration.name,
+                type=_parse_type(declaration.type)
+            )
+            properties.append(property)
+            if isinstance(property.type, StructType) or isinstance(property.type, UnionType):
+                raise Exception(f"If the following thing is declaring a Union or Struct, we "
+                                f"probably do not handle it properly, as nested elements"
+                                f"are not supported in unions:  {declaration}")
+
+        return Union(
+            name=name,
+            properties=properties
+        )
 
 class _StructParser:
+    __union_parser: _UnionParser = None
+
+    def __init__(self, union_parser: Optional[_UnionParser] = None):
+        if union_parser is None:
+            union_parser = _UnionParser()
+        self.__union_parser = union_parser
+
     def parse_struct(self, struct: c_ast.Struct) -> Struct:
         return self._parse_struct(struct)
 
@@ -94,6 +126,7 @@ class _StructParser:
         name = node.name
         properties: list[Property] = []
         inner_structs: list[Struct] = []
+        inner_unions: list[Union] = []
 
         property_declarations = node.decls
         if property_declarations is None:
@@ -112,17 +145,32 @@ class _StructParser:
                     raise Exception("Found struct type, but could not find Struct")
                 inner_struct = replace(self._parse_struct(ast_struct), name=property.name)
                 inner_structs.append(inner_struct)
+            if isinstance(property.type, UnionType):
+                ast_union = self._find_union(declaration.type)
+                if ast_union is None:
+                    raise Exception("Found union type, but could not find Union")
+                inner_union = replace(self.__union_parser.parse_union(ast_union), name=property.name)
+                inner_unions.append(inner_union)
 
         return Struct(
             name=name,
             properties=properties,
-            inner_structs=inner_structs
+            inner_structs=inner_structs,
+            inner_unions=inner_unions
         )
 
     def _find_struct(self, node: Node) -> Optional[c_ast.Struct]:
         if isinstance(node, TypeDecl) or isinstance(node, ArrayDecl) or isinstance(node, PtrDecl):
             return self._find_struct(node.type)
         elif isinstance(node, c_ast.Struct):
+            return node
+        else:
+            return None
+
+    def _find_union(self, node: Node) -> Optional[c_ast.Union]:
+        if isinstance(node, TypeDecl) or isinstance(node, ArrayDecl) or isinstance(node, PtrDecl):
+            return self._find_struct(node.type)
+        elif isinstance(node, c_ast.Union):
             return node
         else:
             return None

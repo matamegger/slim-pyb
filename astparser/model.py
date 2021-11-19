@@ -11,10 +11,17 @@ class Property:
 
 
 @dataclass(frozen=True)
+class Union:
+    name: Optional[str]
+    properties: list[Property]
+
+
+@dataclass(frozen=True)
 class Struct:
     name: Optional[str]
     properties: list[Property]
     inner_structs: list['Struct']
+    inner_unions: list[Union]
 
 
 @dataclass(frozen=True)
