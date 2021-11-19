@@ -29,6 +29,11 @@ class StructType(Type):
 
 
 @dataclass(frozen=True)
+class UnionType(Type):
+    name: str
+
+
+@dataclass(frozen=True)
 class FunctionParameter:
     name: Optional[str]
     type: Type
