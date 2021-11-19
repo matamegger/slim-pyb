@@ -92,7 +92,7 @@ class _StructParser:
 
     def _parse_struct(self, node: c_ast.Struct) -> Struct:
         name = node.name
-        properties: list[StructProperty] = []
+        properties: list[Property] = []
         inner_structs: list[Struct] = []
 
         property_declarations = node.decls
@@ -101,7 +101,7 @@ class _StructParser:
         for declaration in property_declarations:
             if not isinstance(declaration, Decl):
                 raise Exception(f"Expected Decl but is {type(declaration)}")
-            property = StructProperty(
+            property = Property(
                 name=declaration.name,
                 type=_parse_type(declaration.type)
             )
