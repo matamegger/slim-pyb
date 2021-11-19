@@ -2,12 +2,12 @@ from dataclasses import replace
 from typing import Callable, TypeVar
 
 import bindinggenerator.model
-from astparser.model import Module, TypeDefinition, Struct, Enum, Property
+from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union
 from astparser.types import *
 from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
     EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names, CtypeStructDefinition, \
-    CtypeStructDeclaration
+    CtypeStructDeclaration, CtypeUnion, CtypeUnionDeclaration, CtypeUnionDefinition
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
 
@@ -181,12 +181,17 @@ class ElementArranger:
                 CtypeStructDefinition(element.name),
                 CtypeStructDeclaration(element.name, element.fields),
             ]
+        elif isinstance(element, CtypeUnion):
+            return [
+                CtypeUnionDefinition(element.name),
+                CtypeUnionDeclaration(element.name, element.fields),
+            ]
         else:
             raise Exception(f"That element is not splittable: {element}")
 
     @staticmethod
     def _is_splitable(element: Element) -> bool:
-        return isinstance(element, CtypeStruct)
+        return isinstance(element, CtypeStruct) or isinstance(element, CtypeUnion)
 
 
 class AstTypeConverter:
@@ -238,7 +243,7 @@ class PythonBindingFileGenerator:
                      for type_definition in module.type_definitions]
         elements += [self._create_element_from_enum(enum) for enum in module.enums]
 
-        structs = [self._add_struct_name_prefix_to_inner_structs_name(struct) for struct in module.structs]
+        structs = [self._add_struct_name_prefix_to_inner_struct_and_union_names(struct) for struct in module.structs]
         structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
         elements += [self._create_element_from_struct(struct) for struct in structs]
 
@@ -262,7 +267,7 @@ class PythonBindingFileGenerator:
         return self.__type_converter.convert(typ)
 
     def __add_prefix_to_struct_base_type(self, typ: Type, prefix: str, condition: Callable[[str], bool]) -> Type:
-        if isinstance(typ, StructType):
+        if isinstance(typ, StructType) or isinstance(typ, UnionType):
             name = typ.name
             if condition(name):
                 name = prefix + name
@@ -275,29 +280,41 @@ class PythonBindingFileGenerator:
         else:
             raise Exception(f"Unhandled type {typ}")
 
-    def _add_struct_name_prefix_to_inner_structs_name(self, struct: Struct) -> Struct:
+    def _add_struct_name_prefix_to_inner_struct_and_union_names(self, struct: Struct) -> Struct:
         old_inner_struct_names: list[str] = [inner_struct.name for inner_struct in struct.inner_structs]
+        old_inner_union_names: list[str] = [inner_union.name for inner_union in struct.inner_unions]
         inner_structs: list[Struct] = []
+        inner_unions: list[Union] = []
         for inner_struct in struct.inner_structs:
             inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
-            inner_structs.append(self._add_struct_name_prefix_to_inner_structs_name(inner_struct))
+            inner_structs.append(self._add_struct_name_prefix_to_inner_struct_and_union_names(inner_struct))
+        for inner_union in struct.inner_unions:
+            inner_union = replace(inner_union, name=f"{struct.name}_{inner_union.name}")
+            inner_unions.append(inner_union)
 
         properties: list[Property] = []
         for property in struct.properties:
             new_property_type = self.__add_prefix_to_struct_base_type(
                 property.type,
                 f"{struct.name}_",
-                lambda it: it in old_inner_struct_names
+                lambda it: it in old_inner_struct_names or it in old_inner_union_names
             )
             properties.append(replace(property, type=new_property_type))
 
-        return replace(struct, inner_structs=inner_structs, properties=properties)
+        return replace(struct, inner_structs=inner_structs, inner_unions=inner_unions, properties=properties)
 
     def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
         return CtypeStruct(
             name=struct.name,
             fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
                     for property in struct.properties]
+        )
+
+    def _create_element_from_union(self, union: Union) -> CtypeUnion:
+        return CtypeUnion(
+            name=union.name,
+            fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
+                    for property in union.properties]
         )
 
     @staticmethod
