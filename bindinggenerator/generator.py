@@ -2,7 +2,7 @@ from dataclasses import replace
 from typing import Callable, TypeVar
 
 import bindinggenerator.model
-from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
+from astparser.model import Module, TypeDefinition, Struct, Enum, Property
 from astparser.types import *
 from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
@@ -282,7 +282,7 @@ class PythonBindingFileGenerator:
             inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
             inner_structs.append(self._add_struct_name_prefix_to_inner_structs_name(inner_struct))
 
-        properties: list[StructProperty] = []
+        properties: list[Property] = []
         for property in struct.properties:
             new_property_type = self.__add_prefix_to_struct_base_type(
                 property.type,

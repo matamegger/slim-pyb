@@ -5,7 +5,7 @@ from astparser.types import Type
 
 
 @dataclass(frozen=True)
-class StructProperty:
+class Property:
     name: str
     type: Type
 
@@ -13,7 +13,7 @@ class StructProperty:
 @dataclass(frozen=True)
 class Struct:
     name: Optional[str]
-    properties: list[StructProperty]
+    properties: list[Property]
     inner_structs: list['Struct']
 
 
