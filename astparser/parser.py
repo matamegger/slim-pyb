@@ -169,7 +169,7 @@ class _StructParser:
 
     def _find_union(self, node: Node) -> Optional[c_ast.Union]:
         if isinstance(node, TypeDecl) or isinstance(node, ArrayDecl) or isinstance(node, PtrDecl):
-            return self._find_struct(node.type)
+            return self._find_union(node.type)
         elif isinstance(node, c_ast.Union):
             return node
         else:
