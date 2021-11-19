@@ -330,9 +330,12 @@ class AstParser:
     def _parse_unnamed_top_level_declarations(declarations: list[Decl]) -> list[Struct]:
         ast_structs = []
         for declaration in declarations:
-            if not isinstance(declaration.type, c_ast.Struct):
-                raise Exception("Unexpected type {type(d.type)}")
-            ast_structs.append(declaration.type)
+            if isinstance(declaration.type, c_ast.Struct):
+                ast_structs.append(declaration.type)
+            elif isinstance(declaration.type, c_ast.Enum):
+                print("Found an Enum without name that will be ignored.")
+            else:
+                raise Exception(f"Unexpected type {declaration.type}")
         return _StructParser().parse_structs(ast_structs)
 
     @staticmethod
