@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from astparser import get_base_type_name, Type, StructType, get_base_type, FunctionType
+from astparser import get_base_type_name, Type, StructType, get_base_type, FunctionType, UnionType
 from astparser.model import Module, Struct, Enum, TypeDefinition
 
 
@@ -103,10 +103,13 @@ class ModuleCleaner:
     @staticmethod
     def _get_referenced_types(struct: Struct) -> list[Type]:
         inner_struct_names = [inner_struct.name for inner_struct in struct.inner_structs]
+        inner_union_names = [inner_union.name for inner_union in struct.inner_unions]
+        inner_type_names = inner_struct_names + inner_union_names
         types: list[Type] = [property.type
                              for property in struct.properties
-                             if not isinstance(get_base_type(property.type), StructType) or
-                             get_base_type_name(property.type) not in inner_struct_names]
+                             if (not isinstance(get_base_type(property.type), StructType) and
+                                 not isinstance(get_base_type(property.type), UnionType)
+                                 ) or get_base_type_name(property.type) not in inner_type_names]
         for inner_struct in struct.inner_structs:
             types.extend(ModuleCleaner._get_referenced_types(inner_struct))
         return types
