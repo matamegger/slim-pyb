@@ -62,6 +62,21 @@ class CtypeStruct(CtypeStructDefinition, CtypeStructDeclaration):
 
 
 @dataclass(frozen=True)
+class CtypeUnionDefinition(Element):
+    pass
+
+
+@dataclass(frozen=True)
+class CtypeUnionDeclaration(Element):
+    fields: list[CtypeStructField]
+
+
+@dataclass(frozen=True)
+class CtypeUnion(CtypeUnionDefinition, CtypeUnionDeclaration):
+    pass
+
+
+@dataclass(frozen=True)
 class EnumEntry(Element):
     value: int
 
@@ -82,6 +97,7 @@ class BindingFile:
     name: str
     imports: list[Import]
     elements: list[Element]
+
 
 @dataclass(frozen=True)
 class Parameter:
