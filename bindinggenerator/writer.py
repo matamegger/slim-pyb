@@ -266,14 +266,15 @@ class SystemWriter(BaseWriter):
     __CLASS_PATTERN = "class {0}:"
     __INIT_METHOD_START_PATTERN = "def __init__(self, model=\"{0}\"):"
     __LOADER_BLOCK_LINES = ["self.model = model",
+                            """directory = os.path.dirname(__file__)""",
                             """if platform.system() == "Linux":""",
-                            """    self.dll_path = os.path.abspath(f"{model}.so")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}.so")""",
                             """    self.dll = ctypes.cdll.LoadLibrary(self.dll_path)""",
                             """elif platform.system() == "Darwin":""",
-                            """    self.dll_path = os.path.abspath(f"{model}.dylib")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}.dylib")""",
                             """    self.dll = ctypes.cdll.LoadLibrary(self.dll_path)""",
                             """elif platform.system() == "Windows":""",
-                            """    self.dll_path = os.path.abspath(f"{model}_win64.dll")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}_win64.dll")""",
                             """    self.dll = ctypes.windll.LoadLibrary(self.dll_path)""",
                             """else:""",
                             """    raise Exception("System Not Supported")"""
