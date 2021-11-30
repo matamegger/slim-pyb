@@ -11,17 +11,20 @@ class Property:
 
 
 @dataclass(frozen=True)
-class Union:
+class Container:
     name: Optional[str]
     properties: list[Property]
+    inner_containers: list['Container']
 
 
 @dataclass(frozen=True)
-class Struct:
-    name: Optional[str]
-    properties: list[Property]
-    inner_structs: list['Struct']
-    inner_unions: list[Union]
+class Struct(Container):
+    pass
+
+
+@dataclass(frozen=True)
+class Union(Container):
+    pass
 
 
 @dataclass(frozen=True)
@@ -64,7 +67,7 @@ class Method:
 @dataclass(frozen=True)
 class Module:
     type_definitions: list[TypeDefinition]
-    structs: list[Struct]
+    container: list[Container]
     enums: list[Enum]
     fields: list[Field]
     methods: list[Method]
