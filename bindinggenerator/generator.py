@@ -2,7 +2,7 @@ from dataclasses import replace
 from typing import Callable, TypeVar, Union
 
 import bindinggenerator.model
-from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion
+from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion, Container
 from astparser.types import *
 from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
@@ -244,10 +244,9 @@ class PythonBindingFileGenerator:
                      for type_definition in module.type_definitions]
         elements += [self._create_element_from_enum(enum) for enum in module.enums]
 
-        structs = [self._add_struct_name_prefix_to_inner_struct_and_union_names(struct) for struct in module.structs]
-        structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
-        elements += [self._create_element_from_struct(struct) for struct in structs]
-        elements += [self._create_element_from_union(union) for struct in structs for union in struct.inner_unions]
+        containers = [self._add_container_name_prefix_to_inner_container(container) for container in module.container]
+        containers += [inner_container for container in containers for inner_container in container.inner_containers]
+        elements += [self._create_element_from_container(container) for container in containers]
 
         return BindingFile(
             name=f"{name}.py",
@@ -284,28 +283,30 @@ class PythonBindingFileGenerator:
         else:
             raise Exception(f"Unhandled type {typ}")
 
-    def _add_struct_name_prefix_to_inner_struct_and_union_names(self, struct: Struct) -> Struct:
-        old_inner_struct_names: list[str] = [inner_struct.name for inner_struct in struct.inner_structs]
-        old_inner_union_names: list[str] = [inner_union.name for inner_union in struct.inner_unions]
-        inner_structs: list[Struct] = []
-        inner_unions: list[AstParserUnion] = []
-        for inner_struct in struct.inner_structs:
-            inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
-            inner_structs.append(self._add_struct_name_prefix_to_inner_struct_and_union_names(inner_struct))
-        for inner_union in struct.inner_unions:
-            inner_union = replace(inner_union, name=f"{struct.name}_{inner_union.name}")
-            inner_unions.append(inner_union)
+    def _add_container_name_prefix_to_inner_container(self, container: Container) -> Container:
+        old_inner_container_names: list[str] = [inner_struct.name for inner_struct in container.inner_containers]
+        inner_containers: list[Container] = []
+        for inner_container in container.inner_containers:
+            inner_container = replace(inner_container, name=f"{container.name}_{inner_container.name}")
+            inner_containers.append(self._add_container_name_prefix_to_inner_container(inner_container))
 
         properties: list[Property] = []
-        for property in struct.properties:
+        for property in container.properties:
             new_property_type = self.__add_prefix_to_struct_base_type(
                 property.type,
-                f"{struct.name}_",
-                lambda it: it in old_inner_struct_names or it in old_inner_union_names
+                f"{container.name}_",
+                lambda it: it in old_inner_container_names
             )
             properties.append(replace(property, type=new_property_type))
 
-        return replace(struct, inner_structs=inner_structs, inner_unions=inner_unions, properties=properties)
+        return replace(container, inner_containers=inner_containers, properties=properties)
+
+    def _create_element_from_container(self, container: Container) -> Element:
+        if isinstance(container, Struct):
+            return self._create_element_from_struct(container)
+        if isinstance(container, AstParserUnion):
+            return self._create_element_from_union(container)
+        raise Exception(f"Unhandled Container type {type(container)}")
 
     def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
         return CtypeStruct(
