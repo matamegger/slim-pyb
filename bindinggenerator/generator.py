@@ -76,7 +76,7 @@ class PythonCodeElementGraphCreator:
                              for dependency in direct_dependencies
                              for element in self._get_elements_by_name(dependency, elements)
                              for d in self._get_recursive_direct_dependencies(element, elements)]
-            if not isinstance(element, CtypeStruct):
+            if not isinstance(element, CtypeStruct) and not isinstance(element, CtypeUnion):
                 dependencies.append(element.name)
             else:
                 keys.append(element.name)
