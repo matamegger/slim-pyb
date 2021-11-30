@@ -24,13 +24,18 @@ class Array(Type):
 
 
 @dataclass(frozen=True)
-class StructType(Type):
+class InlineDeclaration(Type):
     name: str
 
 
 @dataclass(frozen=True)
-class UnionType(Type):
-    name: str
+class InlineStructType(InlineDeclaration):
+    pass
+
+
+@dataclass(frozen=True)
+class InlineUnionType(InlineDeclaration):
+    pass
 
 
 @dataclass(frozen=True)

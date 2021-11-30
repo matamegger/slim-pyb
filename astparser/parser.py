@@ -40,16 +40,11 @@ def _parse_type(node: Node) -> Type:
         parsed_type = _parse_type(node.type)
         if isinstance(parsed_type, NamedType):
             parsed_type = NamedType(name=parsed_type.name, constant=_is_constant(node))
-        elif isinstance(parsed_type, StructType):
-            struct_name = parsed_type.name
-            if struct_name is None:
-                struct_name = node.declname
-            parsed_type = StructType(name=struct_name, constant=_is_constant(node))
-        elif isinstance(parsed_type, UnionType):
-            union_name = parsed_type.name
-            if union_name is None:
-                union_name = node.declname
-            parsed_type = UnionType(name=union_name, constant=_is_constant(node))
+        elif isinstance(parsed_type, InlineDeclaration):
+            inline_declaration_name = parsed_type.name
+            if inline_declaration_name is None:
+                inline_declaration_name = node.declname
+            parsed_type = replace(parsed_type, name=inline_declaration_name, constant=_is_constant(node))
         return parsed_type
     elif isinstance(node, IdentifierType):
         name = _identifier_names_to_str(node.names)
@@ -61,9 +56,9 @@ def _parse_type(node: Node) -> Type:
         parsed_type = _parse_type(node.type)
         return Array(of=parsed_type, size=_parse_array_dimension(node.dim), constant=False)
     elif isinstance(node, c_ast.Struct):
-        return StructType(name=node.name, constant=False)
+        return InlineStructType(name=node.name, constant=False)
     elif isinstance(node, c_ast.Union):
-        return UnionType(name=node.name, constant=False)
+        return InlineUnionType(name=node.name, constant=False)
     elif isinstance(node, c_ast.FuncDecl):
         params: list[FunctionParameter] = []
         if not isinstance(node.args, ParamList):

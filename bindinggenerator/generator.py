@@ -199,7 +199,7 @@ class AstTypeConverter:
     type_remapping_map: dict[str, str] = {}
 
     def convert(self, typ: Type) -> CtypeFieldType:
-        if isinstance(typ, StructType) or isinstance(typ, NamedType) or isinstance(typ, UnionType):
+        if isinstance(typ, InlineDeclaration) or isinstance(typ, NamedType):
             name = typ.name
             if name in self.type_remapping_map:
                 name = self.type_remapping_map[name]
@@ -269,7 +269,7 @@ class PythonBindingFileGenerator:
         return self.__type_converter.convert(typ)
 
     def __add_prefix_to_struct_base_type(self, typ: Type, prefix: str, condition: Callable[[str], bool]) -> Type:
-        if isinstance(typ, StructType) or isinstance(typ, UnionType):
+        if isinstance(typ, InlineDeclaration):
             name = typ.name
             if condition(name):
                 name = prefix + name
