@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
 
 
@@ -44,6 +45,30 @@ class Element:
 class CtypeStructField:
     name: str
     type: CtypeFieldType
+
+
+class CtypeContainerType(Enum):
+    STRUCT = 1
+    UNION = 2
+
+
+@dataclass(frozen=True)
+class CtypeContainerElement(Element):
+    container_type: CtypeContainerType
+
+
+@dataclass(frozen=True)
+class CtypeContainerDefinition(CtypeContainerElement):
+    pass
+
+
+@dataclass(frozen=True)
+class CtypeContainerDeclaration(CtypeContainerElement):
+    field: list[CtypeStructField]
+
+
+@dataclass(frozen=True)
+class CtypeContainer(CtypeContainerDeclaration, CtypeContainerDefinition): pass
 
 
 @dataclass(frozen=True)
