@@ -4,10 +4,10 @@ from typing import Callable, TypeVar, Union
 import bindinggenerator.model
 from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion, Container
 from astparser.types import *
-from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
-    CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
-    EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names, CtypeStructDefinition, \
-    CtypeStructDeclaration, CtypeUnion, CtypeUnionDeclaration, CtypeUnionDefinition
+from bindinggenerator.model import BindingFile, CtypeContainer, CtypeContainerDeclaration, CtypeContainerDefinition, \
+    CtypeContainerType, CtypeContainerElement, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
+    SplittableElement, CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement, \
+    EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
 
@@ -29,9 +29,7 @@ class PythonCodeElementGraphCreator:
         return list(filter(lambda it: it.name == name, elements))
 
     def _get_recursive_direct_dependencies(self, element: Element, elements: list[Element]):
-        if isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeStructDeclaration) \
-                or isinstance(element, CtypeStruct) or isinstance(element, CtypeUnionDefinition) \
-                or isinstance(element, CtypeUnionDeclaration) or isinstance(element, CtypeUnion):
+        if isinstance(element, CtypeContainerElement):
             return [self._mark_as_direct_dependency_name(element.name)]
         elif isinstance(element, bindinggenerator.model.Enum):
             return []
@@ -64,7 +62,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=get_base_type_names(element.for_type),
                 data=element
             )
-        elif isinstance(element, CtypeStructDeclaration) or isinstance(element, CtypeUnionDeclaration):
+        elif isinstance(element, CtypeContainerDeclaration):
             keys = [self._mark_as_direct_dependency_name(element.name)]
             dependencies = self._get_dependencies(element)
             direct_dependencies = self._get_direct_ctype_dependencies(element)
@@ -76,7 +74,7 @@ class PythonCodeElementGraphCreator:
                              for dependency in direct_dependencies
                              for element in self._get_elements_by_name(dependency, elements)
                              for d in self._get_recursive_direct_dependencies(element, elements)]
-            if not isinstance(element, CtypeStruct) and not isinstance(element, CtypeUnion):
+            if not isinstance(element, CtypeContainer):
                 dependencies.append(element.name)
             else:
                 keys.append(element.name)
@@ -85,7 +83,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=list(set(dependencies)),
                 data=element
             )
-        elif isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeUnionDefinition):
+        elif isinstance(element, CtypeContainerDefinition):
             return Node(
                 keys=[element.name],
                 dependencies=[],
@@ -105,14 +103,14 @@ class PythonCodeElementGraphCreator:
         return f"__{regular_name}__complete"
 
     @staticmethod
-    def _get_direct_ctype_dependencies(declaration: Union[CtypeStructDeclaration, CtypeUnionDeclaration]) -> list[str]:
-        return [_get_name_of_type(field.type) for field in declaration.fields
+    def _get_direct_ctype_dependencies(declaration: CtypeContainerDeclaration) -> list[str]:
+        return [_get_name_of_type(field.type) for field in declaration.properties
                 if _get_name_of_type(field.type) is not None]
 
     @staticmethod
-    def _get_dependencies(declaration: Union[CtypeStructDeclaration, CtypeUnionDeclaration]) -> list[str]:
+    def _get_dependencies(declaration: Union[CtypeContainerDeclaration]) -> list[str]:
         return [type_name
-                for field in declaration.fields
+                for field in declaration.properties
                 for type_name in get_base_type_names(field.type)]
 
 
@@ -167,32 +165,13 @@ class ElementArranger:
         return [item for sublist in list_in_list for item in sublist]
 
     def _split_one_element(self, elements: list[Element]) -> list[Element]:
-        splittable_elements = [element for element in elements if self._is_splitable(element)]
-        not_splittable_elements = [element for element in elements if not self._is_splitable(element)]
+        splittable_elements = [element for element in elements if isinstance(element, SplittableElement)]
+        not_splittable_elements = [element for element in elements if not isinstance(element, SplittableElement)]
 
         if len(splittable_elements) == 0:
             raise Exception("No element to split")
 
-        return not_splittable_elements + self.__split_element(splittable_elements[0]) + splittable_elements[1:]
-
-    @staticmethod
-    def __split_element(element: Element) -> list[Element]:
-        if isinstance(element, CtypeStruct):
-            return [
-                CtypeStructDefinition(element.name),
-                CtypeStructDeclaration(element.name, element.fields),
-            ]
-        elif isinstance(element, CtypeUnion):
-            return [
-                CtypeUnionDefinition(element.name),
-                CtypeUnionDeclaration(element.name, element.fields),
-            ]
-        else:
-            raise Exception(f"That element is not splittable: {element}")
-
-    @staticmethod
-    def _is_splitable(element: Element) -> bool:
-        return isinstance(element, CtypeStruct) or isinstance(element, CtypeUnion)
+        return not_splittable_elements + splittable_elements[0].split() + splittable_elements[1:]
 
 
 class AstTypeConverter:
@@ -302,25 +281,20 @@ class PythonBindingFileGenerator:
         return replace(container, inner_containers=inner_containers, properties=properties)
 
     def _create_element_from_container(self, container: Container) -> Element:
+        container_type = self.__get_container_type(container)
+        return CtypeContainer(
+            name=container.name,
+            properties=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
+                        for property in container.properties],
+            container_type=container_type
+        )
+
+    def __get_container_type(self, container: Container) -> CtypeContainerType:
         if isinstance(container, Struct):
-            return self._create_element_from_struct(container)
+            return CtypeContainerType.STRUCT
         if isinstance(container, AstParserUnion):
-            return self._create_element_from_union(container)
-        raise Exception(f"Unhandled Container type {type(container)}")
-
-    def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
-        return CtypeStruct(
-            name=struct.name,
-            fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
-                    for property in struct.properties]
-        )
-
-    def _create_element_from_union(self, union: AstParserUnion) -> CtypeUnion:
-        return CtypeUnion(
-            name=union.name,
-            fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
-                    for property in union.properties]
-        )
+            return CtypeContainerType.UNION
+        raise Exception(f"Unknown container type: {type(container)}")
 
     @staticmethod
     def _create_element_from_enum(enum: Enum) -> EnumElement:
