@@ -3,9 +3,10 @@ import os.path
 from typing import IO
 
 from bindinggenerator import primitive_names_to_ctypes
-from bindinggenerator.model import BindingFile, Import, Element, Definition, Enum, CtypeStruct, CtypeStructDefinition, \
-    CtypeStructDeclaration, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, CtypeFieldTypeArray, \
-    CtypeFieldFunctionPointer, CtypeStructField, System, SystemMethod, SystemField
+from bindinggenerator.model import BindingFile, Import, Element, Definition, Enum, CtypeContainer, \
+    CtypeContainerDeclaration, CtypeContainerDefinition, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, \
+    CtypeFieldTypeArray, CtypeFieldFunctionPointer, CtypeContainerProperty, System, SystemMethod, SystemField, \
+    CtypeContainerType
 
 
 class Output:
@@ -157,11 +158,12 @@ class PythonBindingWriter(BaseWriter):
     __ENUM_DECLARATION_PATTER = "class {0}(Enum):"
     __ENUM_ENTRY_PATTERN = "{0} = {1}"
     __STRUCT_DECLARATION_PATTERN = "class {0}(ctypes.Structure):"
-    __STRUCT_FIELD_ASSIGNMENT_START = "_fields_ = ["
-    __STRUCT_FIELD_OR_SLOTS_ASSIGNMENT_END = "]"
-    __STRUCT_FIELD_PATTERN = "('{0}', {1})"
-    __STRUCT_SLOTS_ASSIGNMENT_START = "__slots__ = ["
-    __STRUCT_SLOT_PATTERN = "'{0}'"
+    __FIELD_ASSIGNMENT_START = "_fields_ = ["
+    __FIELD_OR_SLOTS_ASSIGNMENT_END = "]"
+    __FIELD_PATTERN = "('{0}', {1})"
+    __SLOTS_ASSIGNMENT_START = "__slots__ = ["
+    __SLOT_PATTERN = "'{0}'"
+    __UNION_DECLARATION_PATTERN = "class {0}(ctypes.Union):"
 
     def write(self, file: BindingFile, output: Output):
         for imprt in file.imports:
@@ -181,82 +183,95 @@ class PythonBindingWriter(BaseWriter):
             for entry in element.entries:
                 output.write(self._INDENT + self.__ENUM_ENTRY_PATTERN.format(entry.name, entry.value))
                 output.new_line()
-        elif isinstance(element, CtypeStruct):
-            output.write(self.__STRUCT_DECLARATION_PATTERN.format(element.name))
+        elif isinstance(element, CtypeContainer):
+            self._write_container_declaration(element, output)
             output.new_line()
-            output.new_line()
-            self.__write_struct_declaration(element, False, output, 1)
-        elif isinstance(element, CtypeStructDefinition):
-            output.write(self.__STRUCT_DECLARATION_PATTERN.format(element.name))
-            output.new_line()
+            self.__write_container_definition(element, False, output, 1)
+        elif isinstance(element, CtypeContainerDeclaration):
+            self._write_container_declaration(element, output)
             output.write(self._INDENT)
             output.write(self.__PASS)
-        elif isinstance(element, CtypeStructDeclaration):
-            self.__write_struct_declaration(element, True, output, 0)
+        elif isinstance(element, CtypeContainerDefinition):
+            self.__write_container_definition(element, True, output, 0)
         else:
             raise Exception(f"Unhandled element {element}")
 
-    def __write_struct_declaration(self, declaration: CtypeStructDeclaration, with_class_name: bool, output: Output,
-                                   indent: int):
-        self.__write_struct_declaration_slots(declaration, with_class_name, output, indent)
-        output.new_line()
-        self.__write_struct_declaration_fields(declaration, with_class_name, output, indent)
+    def _write_container_declaration(self, container_definition: CtypeContainerDeclaration, output: Output):
+        if container_definition.container_type == CtypeContainerType.STRUCT:
+            output.write(self.__STRUCT_DECLARATION_PATTERN.format(container_definition.name))
+        elif container_definition.container_type == CtypeContainerType.UNION:
+            output.write(self.__UNION_DECLARATION_PATTERN.format(container_definition.name))
+        else:
+            raise Exception(f"Unknown container type {container_definition.container_type}")
 
-    def __write_struct_declaration_slots(
+        output.new_line()
+
+    def __write_container_definition(
             self,
-            declaration: CtypeStructDeclaration,
+            definition: CtypeContainerDefinition,
+            with_class_name: bool,
+            output: Output,
+            indent: int
+    ):
+        self.__write_container_definition_slots(definition, with_class_name, output, indent)
+        output.new_line()
+        self.__write_container_definition_fields(definition, with_class_name, output, indent)
+
+    def __write_container_definition_slots(
+            self,
+            definition: CtypeContainerDefinition,
             with_class_name: bool,
             output: Output, indent: int
     ):
         self._write_indent(output, indent)
         if with_class_name:
-            output.write(declaration.name)
+            output.write(definition.name)
             output.write(".")
-        output.write(self.__STRUCT_SLOTS_ASSIGNMENT_START)
+        output.write(self.__SLOTS_ASSIGNMENT_START)
         output.new_line()
         indent = indent + 1
-        for field in declaration.fields[:-1]:
+        for field in definition.properties[:-1]:
             self.__write_struct_declaration_slot(field, output, indent)
             output.write(",")
             output.new_line()
-        self.__write_struct_declaration_slot(declaration.fields[-1], output, indent)
+        self.__write_struct_declaration_slot(definition.properties[-1], output, indent)
         output.new_line()
         indent -= 1
         self._write_indent(output, indent)
-        output.write(self.__STRUCT_FIELD_OR_SLOTS_ASSIGNMENT_END)
+        output.write(self.__FIELD_OR_SLOTS_ASSIGNMENT_END)
         output.new_line()
 
-    def __write_struct_declaration_fields(
+    def __write_container_definition_fields(
             self,
-            declaration: CtypeStructDeclaration,
+            definition: CtypeContainerDefinition,
             with_class_name: bool,
             output: Output, indent: int
     ):
         self._write_indent(output, indent)
         if with_class_name:
-            output.write(declaration.name)
+            output.write(definition.name)
             output.write(".")
-        output.write(self.__STRUCT_FIELD_ASSIGNMENT_START)
+        output.write(self.__FIELD_ASSIGNMENT_START)
         output.new_line()
         indent = indent + 1
-        for field in declaration.fields[:-1]:
+        for field in definition.properties[:-1]:
             self.__write_struct_declaration_field(field, output, indent)
             output.write(",")
             output.new_line()
-        self.__write_struct_declaration_field(declaration.fields[-1], output, indent)
+        self.__write_struct_declaration_field(definition.properties[-1], output, indent)
         output.new_line()
         indent -= 1
         self._write_indent(output, indent)
-        output.write(self.__STRUCT_FIELD_OR_SLOTS_ASSIGNMENT_END)
+        output.write(self.__FIELD_OR_SLOTS_ASSIGNMENT_END)
         output.new_line()
 
-    def __write_struct_declaration_slot(self, field: CtypeStructField, output: Output, indent: int):
+    def __write_struct_declaration_slot(self, field: CtypeContainerProperty, output: Output, indent: int):
         self._write_indent(output, indent)
-        output.write(self.__STRUCT_SLOT_PATTERN.format(field.name))
+        output.write(self.__SLOT_PATTERN.format(field.name))
 
-    def __write_struct_declaration_field(self, field: CtypeStructField, output: Output, indent: int):
+    def __write_struct_declaration_field(self, field: CtypeContainerProperty, output: Output, indent: int):
         self._write_indent(output, indent)
-        output.write(self.__STRUCT_FIELD_PATTERN.format(field.name, self.__mapping(field.type)))
+        output.write(self.__FIELD_PATTERN.format(field.name, self.__mapping(field.type)))
 
     def __mapping(self, typ: CtypeFieldType) -> str:
         return self._mapper.get_mapping(typ)
@@ -266,14 +281,15 @@ class SystemWriter(BaseWriter):
     __CLASS_PATTERN = "class {0}:"
     __INIT_METHOD_START_PATTERN = "def __init__(self, model=\"{0}\"):"
     __LOADER_BLOCK_LINES = ["self.model = model",
+                            """directory = os.path.dirname(__file__)""",
                             """if platform.system() == "Linux":""",
-                            """    self.dll_path = os.path.abspath(f"{model}.so")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}.so")""",
                             """    self.dll = ctypes.cdll.LoadLibrary(self.dll_path)""",
                             """elif platform.system() == "Darwin":""",
-                            """    self.dll_path = os.path.abspath(f"{model}.dylib")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}.dylib")""",
                             """    self.dll = ctypes.cdll.LoadLibrary(self.dll_path)""",
                             """elif platform.system() == "Windows":""",
-                            """    self.dll_path = os.path.abspath(f"{model}_win64.dll")""",
+                            """    self.dll_path = os.path.join(directory, f"{model}_win64.dll")""",
                             """    self.dll = ctypes.windll.LoadLibrary(self.dll_path)""",
                             """else:""",
                             """    raise Exception("System Not Supported")"""

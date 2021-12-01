@@ -23,6 +23,8 @@ class SystemGenerator:
     __INPUTS_NAME = "inputs"
     __SIGNALS_FIELD_REGEX_PATTERN = "{0}_B"
     __SIGNALS_NAME = "signals"
+    __PARAMETERS_FIELD_REGEX_PATTERN = "{0}_P"
+    __PARAMETERS_NAME = "parameters"
     __CONTINUOUS_STATE_FIELD_REGEX_PATTERN = "{0}_X"
     __REAL_TIME_MODEL_FIELD_REGEX_PATTERN = "{0}_M"
 
@@ -91,6 +93,8 @@ class SystemGenerator:
             name = self.__INPUTS_NAME
         elif self.__is_signals(simulink_system_name, ast_field):
             name = self.__SIGNALS_NAME
+        elif self.__is_parameters(simulink_system_name, ast_field):
+            name = self.__PARAMETERS_NAME
 
         return SystemField(
             name=name,
@@ -98,23 +102,23 @@ class SystemGenerator:
             name_in_library=ast_field.name
         )
 
-    def __is_outputs(self, simulink_system_name: str, ast_field: AstField) -> bool:
+    def __matches(self, pattern: str, simulink_system_name: str, ast_field: AstField):
         return re.fullmatch(
-            self.__OUTPUTS_FIELD_REGEX_PATTERN.format(simulink_system_name),
+            pattern.format(simulink_system_name),
             ast_field.name
         ) is not None
+
+    def __is_outputs(self, simulink_system_name: str, ast_field: AstField) -> bool:
+        return self.__matches(self.__OUTPUTS_FIELD_REGEX_PATTERN, simulink_system_name, ast_field)
 
     def __is_inputs(self, simulink_system_name: str, ast_field: AstField) -> bool:
-        return re.fullmatch(
-            self.__INPUTS_FIELD_REGEX_PATTERN.format(simulink_system_name),
-            ast_field.name
-        ) is not None
+        return self.__matches(self.__INPUTS_FIELD_REGEX_PATTERN, simulink_system_name, ast_field)
 
     def __is_signals(self, simulink_system_name: str, ast_field: AstField) -> bool:
-        return re.fullmatch(
-            self.__SIGNALS_FIELD_REGEX_PATTERN.format(simulink_system_name),
-            ast_field.name
-        ) is not None
+        return self.__matches(self.__SIGNALS_FIELD_REGEX_PATTERN, simulink_system_name, ast_field)
+
+    def __is_parameters(self, simulink_system_name: str, ast_field: AstField) -> bool:
+        return self.__matches(self.__PARAMETERS_FIELD_REGEX_PATTERN, simulink_system_name, ast_field)
 
     def _filter_life_cycle_methods(self, methods: list[AstMethod]) -> list[AstMethod]:
         return [method for method in methods if self.__is_life_cycle_method_name(method.name)]

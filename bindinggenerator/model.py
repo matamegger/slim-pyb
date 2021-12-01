@@ -1,5 +1,24 @@
+import abc
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
+
+
+@dataclass(frozen=True)
+class Element:
+    name: str
+
+
+class SplittableElement(abc.ABC):
+    @classmethod
+    def __subclasshook__(cls, subclass):
+        return (hasattr(subclass, 'split') and
+                callable(subclass.split) or
+                NotImplemented)
+
+    @abc.abstractmethod
+    def split(self) -> list[Element]:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -36,29 +55,38 @@ class Import:
 
 
 @dataclass(frozen=True)
-class Element:
-    name: str
-
-
-@dataclass(frozen=True)
-class CtypeStructField:
+class CtypeContainerProperty:
     name: str
     type: CtypeFieldType
 
 
+class CtypeContainerType(Enum):
+    STRUCT = 1
+    UNION = 2
+
+
 @dataclass(frozen=True)
-class CtypeStructDefinition(Element):
+class CtypeContainerElement(Element):
+    container_type: CtypeContainerType
+
+
+@dataclass(frozen=True)
+class CtypeContainerDeclaration(CtypeContainerElement):
     pass
 
 
 @dataclass(frozen=True)
-class CtypeStructDeclaration(Element):
-    fields: list[CtypeStructField]
+class CtypeContainerDefinition(CtypeContainerElement):
+    properties: list[CtypeContainerProperty]
 
 
 @dataclass(frozen=True)
-class CtypeStruct(CtypeStructDefinition, CtypeStructDeclaration):
-    pass
+class CtypeContainer(CtypeContainerDefinition, CtypeContainerDeclaration, SplittableElement):
+    def split(self) -> list[Element]:
+        return [
+            CtypeContainerDeclaration(name=self.name, container_type=self.container_type),
+            CtypeContainerDefinition(name=self.name, properties=self.properties, container_type=self.container_type)
+        ]
 
 
 @dataclass(frozen=True)
@@ -82,6 +110,7 @@ class BindingFile:
     name: str
     imports: list[Import]
     elements: list[Element]
+
 
 @dataclass(frozen=True)
 class Parameter:

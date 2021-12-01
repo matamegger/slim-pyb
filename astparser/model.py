@@ -5,16 +5,26 @@ from astparser.types import Type
 
 
 @dataclass(frozen=True)
-class StructProperty:
+class Property:
     name: str
     type: Type
 
 
 @dataclass(frozen=True)
-class Struct:
+class Container:
     name: Optional[str]
-    properties: list[StructProperty]
-    inner_structs: list['Struct']
+    properties: list[Property]
+    inner_containers: list['Container']
+
+
+@dataclass(frozen=True)
+class Struct(Container):
+    pass
+
+
+@dataclass(frozen=True)
+class Union(Container):
+    pass
 
 
 @dataclass(frozen=True)
@@ -57,7 +67,7 @@ class Method:
 @dataclass(frozen=True)
 class Module:
     type_definitions: list[TypeDefinition]
-    structs: list[Struct]
+    container: list[Container]
     enums: list[Enum]
     fields: list[Field]
     methods: list[Method]

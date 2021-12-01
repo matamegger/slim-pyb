@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import replace
-from typing import Callable
+from typing import Callable, Any
 
 from pycparser import parse_file, c_ast
 from pycparser.c_ast import Node, Decl, Typedef, TypeDecl, IdentifierType, PtrDecl, ArrayDecl, Constant, \
@@ -40,11 +40,11 @@ def _parse_type(node: Node) -> Type:
         parsed_type = _parse_type(node.type)
         if isinstance(parsed_type, NamedType):
             parsed_type = NamedType(name=parsed_type.name, constant=_is_constant(node))
-        elif isinstance(parsed_type, StructType):
-            struct_name = parsed_type.name
-            if struct_name is None:
-                struct_name = node.declname
-            parsed_type = StructType(name=struct_name, constant=_is_constant(node))
+        elif isinstance(parsed_type, InlineDeclaration):
+            inline_declaration_name = parsed_type.name
+            if inline_declaration_name is None:
+                inline_declaration_name = node.declname
+            parsed_type = replace(parsed_type, name=inline_declaration_name, constant=_is_constant(node))
         return parsed_type
     elif isinstance(node, IdentifierType):
         name = _identifier_names_to_str(node.names)
@@ -56,7 +56,9 @@ def _parse_type(node: Node) -> Type:
         parsed_type = _parse_type(node.type)
         return Array(of=parsed_type, size=_parse_array_dimension(node.dim), constant=False)
     elif isinstance(node, c_ast.Struct):
-        return StructType(name=node.name, constant=False)
+        return InlineStructType(name=node.name, constant=False)
+    elif isinstance(node, c_ast.Union):
+        return InlineUnionType(name=node.name, constant=False)
     elif isinstance(node, c_ast.FuncDecl):
         params: list[FunctionParameter] = []
         if not isinstance(node.args, ParamList):
@@ -75,18 +77,43 @@ def _parse_type(node: Node) -> Type:
     else:
         raise Exception(f"Unexpected type {type(node)}{node}")
 
+class _ContainerParser:
+    __container_types: dict[type, (type, type)] = {}
 
-class _StructParser:
-    def parse_struct(self, struct: c_ast.Struct) -> Struct:
-        return self._parse_struct(struct)
+    def register_container(self, typ: type, output_type:type, c_ast_type: type):
+        self.__container_types[typ] = (output_type, c_ast_type)
 
-    def parse_structs(self, structs: list[c_ast.Struct]) -> list[Struct]:
-        return [self._parse_struct(struct) for struct in structs]
+    def can_parse_type(self, c_ast_type: type) -> bool:
+        return len(self._find_output_types_for_input(c_ast_type)) > 0
 
-    def _parse_struct(self, node: c_ast.Struct) -> Struct:
+    def _find_output_types_for_input(self, c_ast_type: type) -> list[type]:
+        return [tuple[0] for typ, tuple in self.__container_types.items() if tuple[1] == c_ast_type]
+
+    def _get_registered_c_ast_type(self, typ: type) -> Optional[type]:
+        entry = self.__container_types[typ]
+        if entry is None:
+            return None
+        return entry[1]
+
+    def parse(self, c_ast_container) -> Container:
+        return self._parse(c_ast_container)
+
+    def parse_multiple(self, c_ast_containers: list) -> list[Container]:
+        return [self._parse(c_ast_container) for c_ast_container in c_ast_containers]
+
+    def _parse(self, node) -> Container:
+        node_type = type(node)
+        matching_types = self._find_output_types_for_input(node_type)
+        if len(matching_types) == 0:
+            raise Exception(f"You try to parse a not registered c_ast type {node_type}")
+        elif len(matching_types) != 1:
+            raise Exception(f"You registered too many types for the input type {node_type}")
+
+        output_type = matching_types[0]
+
         name = node.name
-        properties: list[StructProperty] = []
-        inner_structs: list[Struct] = []
+        properties: list[Property] = []
+        inner_containers: list[Container] = []
 
         property_declarations = node.decls
         if property_declarations is None:
@@ -94,32 +121,34 @@ class _StructParser:
         for declaration in property_declarations:
             if not isinstance(declaration, Decl):
                 raise Exception(f"Expected Decl but is {type(declaration)}")
-            property = StructProperty(
+            property = Property(
                 name=declaration.name,
                 type=_parse_type(declaration.type)
             )
             properties.append(property)
-            if isinstance(property.type, StructType):
-                ast_struct = self._find_struct(declaration.type)
-                if ast_struct is None:
-                    raise Exception("Found struct type, but could not find Struct")
-                inner_struct = replace(self._parse_struct(ast_struct), name=property.name)
-                inner_structs.append(inner_struct)
+            if isinstance(property.type, InlineDeclaration):
+                ast_type = self._get_registered_c_ast_type(type(property.type))
+                if ast_type is None:
+                    raise Exception(f"No mapping for {type(property.type)} registered")
+                ast_container = self._find_ast_concept(declaration.type, ast_type)
+                if ast_container is None:
+                    raise Exception(f"Found {type(property.type)}, but could not find {ast_type}")
+                inner_container = replace(self._parse(ast_container), name=property.name)
+                inner_containers.append(inner_container)
 
-        return Struct(
+        return output_type(
             name=name,
             properties=properties,
-            inner_structs=inner_structs
+            inner_containers=inner_containers
         )
 
-    def _find_struct(self, node: Node) -> Optional[c_ast.Struct]:
+    def _find_ast_concept(self, node: Node, ast_type: type) -> Optional[Any]:
         if isinstance(node, TypeDecl) or isinstance(node, ArrayDecl) or isinstance(node, PtrDecl):
-            return self._find_struct(node.type)
-        elif isinstance(node, c_ast.Struct):
+            return self._find_ast_concept(node.type, ast_type)
+        elif isinstance(node, ast_type):
             return node
         else:
             return None
-
 
 class _EnumParser:
     @staticmethod
@@ -164,7 +193,7 @@ class _EnumParser:
 @dataclass(frozen=True)
 class _AstElements:
     type_definitions: list[TypeDefinition]
-    structs: list[Struct]
+    containers: list[Container]
     enums: list[Enum]
 
 
@@ -175,9 +204,12 @@ class _AstInterface:
 
 
 class _TypdefParser:
+    def __init__(self, container_parser: _ContainerParser):
+        self._container_parser = container_parser
+
     def parse_typedefs(self, typedefs: list[Typedef]) -> _AstElements:
         type_definitions: list[TypeDefinition] = []
-        structs: list[Struct] = []
+        containers: list[Container] = []
         enums: list[Enum] = []
 
         for typedef in typedefs:
@@ -186,9 +218,9 @@ class _TypdefParser:
                 if type_definition is not None:
                     type_definitions.append(type_definition)
 
-                struct = self._parse_struct(typedef.type)
-                if struct is not None:
-                    structs.append(struct)
+                container = self._parse_container(typedef.type)
+                if container is not None:
+                    containers.append(container)
                     continue
 
                 enum = self._parse_enum(typedef.type)
@@ -207,7 +239,7 @@ class _TypdefParser:
 
         return _AstElements(
             type_definitions=type_definitions,
-            structs=structs,
+            containers=containers,
             enums=enums
         )
 
@@ -223,13 +255,12 @@ class _TypdefParser:
         else:
             return None
 
-    @staticmethod
-    def _parse_struct(typedecl: TypeDecl) -> Optional[Struct]:
-        if isinstance(typedecl.type, c_ast.Struct) and typedecl.type.decls is not None:
-            struct = _StructParser().parse_struct(typedecl.type)
-            if struct.name is None:
-                struct = replace(struct, name=typedecl.declname)
-            return struct
+    def _parse_container(self, typedecl: TypeDecl) -> Optional[Container]:
+        if self._container_parser.can_parse_type(type(typedecl.type)) and typedecl.type.decls is not None:
+            container = self._container_parser.parse(typedecl.type)
+            if container.name is None:
+                container = replace(container, name=typedecl.declname)
+            return container
         else:
             return None
 
@@ -244,11 +275,18 @@ class _TypdefParser:
             return None
 
     def _parse_function_pointer(self, typedef: Typedef) -> Optional[str]:
+        #TODO implement
         pass
 
 
 class AstParser:
     origin_file_filter: Optional[Callable[[str], bool]] = None
+    _container_parser: _ContainerParser
+
+    def __init__(self):
+        self._container_parser = _ContainerParser()
+        self._container_parser.register_container(InlineStructType, Struct, c_ast.Struct)
+        self._container_parser.register_container(InlineUnionType, Union, c_ast.Union)
 
     def parse(self, ast: FileAST) -> Module:
         definitions = self._filter_by_file(ast, self.origin_file_filter)
@@ -258,13 +296,13 @@ class AstParser:
         named_declarations = self._get_named_top_level_declarations(declarations)
         typedefs = self._get_top_level_typedefs(definitions)
 
-        structs = self._parse_unnamed_top_level_declarations(unnamed_declarations)
-        ast_elements = _TypdefParser().parse_typedefs(typedefs)
+        containers = self._parse_unnamed_top_level_declarations(unnamed_declarations)
+        ast_elements = _TypdefParser(self._container_parser).parse_typedefs(typedefs)
         ast_interface = self._parse_named_top_level_declarations(named_declarations)
 
         return Module(
             type_definitions=ast_elements.type_definitions,
-            structs=ast_elements.structs + structs,
+            container=ast_elements.containers + containers,
             enums=ast_elements.enums,
             fields=ast_interface.fields,
             methods=ast_interface.methods
@@ -326,14 +364,16 @@ class AstParser:
             type=parsed_type
         )
 
-    @staticmethod
-    def _parse_unnamed_top_level_declarations(declarations: list[Decl]) -> list[Struct]:
-        ast_structs = []
+    def _parse_unnamed_top_level_declarations(self, declarations: list[Decl]) -> list[Container]:
+        c_ast_containers = []
         for declaration in declarations:
-            if not isinstance(declaration.type, c_ast.Struct):
-                raise Exception("Unexpected type {type(d.type)}")
-            ast_structs.append(declaration.type)
-        return _StructParser().parse_structs(ast_structs)
+            if self._container_parser.can_parse_type(type(declaration.type)):
+                c_ast_containers.append(declaration.type)
+            elif isinstance(declaration.type, c_ast.Enum):
+                print("Found an Enum without name that will be ignored.")
+            else:
+                raise Exception(f"Unexpected type {declaration.type}")
+        return self._container_parser.parse_multiple(c_ast_containers)
 
     @staticmethod
     def _get_unnamed_top_level_declarations(declarations: list[Decl]) -> list[Decl]:

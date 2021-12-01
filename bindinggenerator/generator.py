@@ -1,13 +1,13 @@
 from dataclasses import replace
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, Union
 
 import bindinggenerator.model
-from astparser.model import Module, TypeDefinition, Struct, Enum, StructProperty
+from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion, Container
 from astparser.types import *
-from bindinggenerator.model import BindingFile, CtypeStruct, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
-    CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement,\
-    EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names, CtypeStructDefinition, \
-    CtypeStructDeclaration
+from bindinggenerator.model import BindingFile, CtypeContainer, CtypeContainerDefinition, CtypeContainerDeclaration, \
+    CtypeContainerType, CtypeContainerElement, CtypeContainerProperty, CtypeFieldType, NamedCtypeFieldType, \
+    SplittableElement, CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement, \
+    EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
 
 
@@ -29,8 +29,7 @@ class PythonCodeElementGraphCreator:
         return list(filter(lambda it: it.name == name, elements))
 
     def _get_recursive_direct_dependencies(self, element: Element, elements: list[Element]):
-        if isinstance(element, CtypeStructDefinition) or isinstance(element, CtypeStructDeclaration) \
-                or isinstance(element, CtypeStruct):
+        if isinstance(element, CtypeContainerElement):
             return [self._mark_as_direct_dependency_name(element.name)]
         elif isinstance(element, bindinggenerator.model.Enum):
             return []
@@ -63,7 +62,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=get_base_type_names(element.for_type),
                 data=element
             )
-        elif isinstance(element, CtypeStructDeclaration):
+        elif isinstance(element, CtypeContainerDefinition):
             keys = [self._mark_as_direct_dependency_name(element.name)]
             dependencies = self._get_dependencies(element)
             direct_dependencies = self._get_direct_ctype_dependencies(element)
@@ -75,7 +74,7 @@ class PythonCodeElementGraphCreator:
                              for dependency in direct_dependencies
                              for element in self._get_elements_by_name(dependency, elements)
                              for d in self._get_recursive_direct_dependencies(element, elements)]
-            if not isinstance(element, CtypeStruct):
+            if not isinstance(element, CtypeContainer):
                 dependencies.append(element.name)
             else:
                 keys.append(element.name)
@@ -84,7 +83,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=list(set(dependencies)),
                 data=element
             )
-        elif isinstance(element, CtypeStructDefinition):
+        elif isinstance(element, CtypeContainerDeclaration):
             return Node(
                 keys=[element.name],
                 dependencies=[],
@@ -104,14 +103,14 @@ class PythonCodeElementGraphCreator:
         return f"__{regular_name}__complete"
 
     @staticmethod
-    def _get_direct_ctype_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
-        return [_get_name_of_type(field.type) for field in struct_declaration.fields
+    def _get_direct_ctype_dependencies(declaration: CtypeContainerDefinition) -> list[str]:
+        return [_get_name_of_type(field.type) for field in declaration.properties
                 if _get_name_of_type(field.type) is not None]
 
     @staticmethod
-    def _get_dependencies(struct_declaration: CtypeStructDeclaration) -> list[str]:
+    def _get_dependencies(declaration: Union[CtypeContainerDefinition]) -> list[str]:
         return [type_name
-                for field in struct_declaration.fields
+                for field in declaration.properties
                 for type_name in get_base_type_names(field.type)]
 
 
@@ -166,34 +165,20 @@ class ElementArranger:
         return [item for sublist in list_in_list for item in sublist]
 
     def _split_one_element(self, elements: list[Element]) -> list[Element]:
-        splittable_elements = [element for element in elements if self._is_splitable(element)]
-        not_splittable_elements = [element for element in elements if not self._is_splitable(element)]
+        splittable_elements = [element for element in elements if isinstance(element, SplittableElement)]
+        not_splittable_elements = [element for element in elements if not isinstance(element, SplittableElement)]
 
         if len(splittable_elements) == 0:
             raise Exception("No element to split")
 
-        return not_splittable_elements + self.__split_element(splittable_elements[0]) + splittable_elements[1:]
-
-    @staticmethod
-    def __split_element(element: Element) -> list[Element]:
-        if isinstance(element, CtypeStruct):
-            return [
-                CtypeStructDefinition(element.name),
-                CtypeStructDeclaration(element.name, element.fields),
-            ]
-        else:
-            raise Exception(f"That element is not splittable: {element}")
-
-    @staticmethod
-    def _is_splitable(element: Element) -> bool:
-        return isinstance(element, CtypeStruct)
+        return not_splittable_elements + splittable_elements[0].split() + splittable_elements[1:]
 
 
 class AstTypeConverter:
     type_remapping_map: dict[str, str] = {}
 
     def convert(self, typ: Type) -> CtypeFieldType:
-        if isinstance(typ, StructType) or isinstance(typ, NamedType):
+        if isinstance(typ, InlineDeclaration) or isinstance(typ, NamedType):
             name = typ.name
             if name in self.type_remapping_map:
                 name = self.type_remapping_map[name]
@@ -238,9 +223,9 @@ class PythonBindingFileGenerator:
                      for type_definition in module.type_definitions]
         elements += [self._create_element_from_enum(enum) for enum in module.enums]
 
-        structs = [self._add_struct_name_prefix_to_inner_structs_name(struct) for struct in module.structs]
-        structs += [inner_struct for struct in structs for inner_struct in struct.inner_structs]
-        elements += [self._create_element_from_struct(struct) for struct in structs]
+        containers = [self._add_container_name_prefix_to_inner_container(container) for container in module.container]
+        containers += [inner_container for container in containers for inner_container in container.inner_containers]
+        elements += [self._create_element_from_container(container) for container in containers]
 
         return BindingFile(
             name=f"{name}.py",
@@ -262,7 +247,7 @@ class PythonBindingFileGenerator:
         return self.__type_converter.convert(typ)
 
     def __add_prefix_to_struct_base_type(self, typ: Type, prefix: str, condition: Callable[[str], bool]) -> Type:
-        if isinstance(typ, StructType):
+        if isinstance(typ, InlineDeclaration):
             name = typ.name
             if condition(name):
                 name = prefix + name
@@ -272,33 +257,44 @@ class PythonBindingFileGenerator:
         elif isinstance(typ, Pointer) or isinstance(typ, Array):
             of = self.__add_prefix_to_struct_base_type(typ.of, prefix, condition)
             return replace(typ, of=of)
+        elif isinstance(typ, FunctionType):
+            return typ
         else:
             raise Exception(f"Unhandled type {typ}")
 
-    def _add_struct_name_prefix_to_inner_structs_name(self, struct: Struct) -> Struct:
-        old_inner_struct_names: list[str] = [inner_struct.name for inner_struct in struct.inner_structs]
-        inner_structs: list[Struct] = []
-        for inner_struct in struct.inner_structs:
-            inner_struct = replace(inner_struct, name=f"{struct.name}_{inner_struct.name}")
-            inner_structs.append(self._add_struct_name_prefix_to_inner_structs_name(inner_struct))
+    def _add_container_name_prefix_to_inner_container(self, container: Container) -> Container:
+        old_inner_container_names: list[str] = [inner_struct.name for inner_struct in container.inner_containers]
+        inner_containers: list[Container] = []
+        for inner_container in container.inner_containers:
+            inner_container = replace(inner_container, name=f"{container.name}_{inner_container.name}")
+            inner_containers.append(self._add_container_name_prefix_to_inner_container(inner_container))
 
-        properties: list[StructProperty] = []
-        for property in struct.properties:
+        properties: list[Property] = []
+        for property in container.properties:
             new_property_type = self.__add_prefix_to_struct_base_type(
                 property.type,
-                f"{struct.name}_",
-                lambda it: it in old_inner_struct_names
+                f"{container.name}_",
+                lambda it: it in old_inner_container_names
             )
             properties.append(replace(property, type=new_property_type))
 
-        return replace(struct, inner_structs=inner_structs, properties=properties)
+        return replace(container, inner_containers=inner_containers, properties=properties)
 
-    def _create_element_from_struct(self, struct: Struct) -> CtypeStruct:
-        return CtypeStruct(
-            name=struct.name,
-            fields=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
-                    for property in struct.properties]
+    def _create_element_from_container(self, container: Container) -> Element:
+        container_type = self.__get_container_type(container)
+        return CtypeContainer(
+            name=container.name,
+            properties=[CtypeContainerProperty(name=property.name, type=self._convert_type(property.type))
+                        for property in container.properties],
+            container_type=container_type
         )
+
+    def __get_container_type(self, container: Container) -> CtypeContainerType:
+        if isinstance(container, Struct):
+            return CtypeContainerType.STRUCT
+        if isinstance(container, AstParserUnion):
+            return CtypeContainerType.UNION
+        raise Exception(f"Unknown container type: {type(container)}")
 
     @staticmethod
     def _create_element_from_enum(enum: Enum) -> EnumElement:
