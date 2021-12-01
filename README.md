@@ -43,6 +43,10 @@ Once you have the generated the code further steps can be executed on machines w
 
 TBD
 
+## References
+
+To showcase the usage of converted Simulink Models, an [example project](https://github.com/matamegger/reinforced-pid-parameter) with a machine learning environment has been created.
+
 ## FAQ
 
 #### Why using docker for the compilation?
