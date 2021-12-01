@@ -55,7 +55,7 @@ class Import:
 
 
 @dataclass(frozen=True)
-class CtypeStructField:
+class CtypeContainerProperty:
     name: str
     type: CtypeFieldType
 
@@ -77,7 +77,7 @@ class CtypeContainerDeclaration(CtypeContainerElement):
 
 @dataclass(frozen=True)
 class CtypeContainerDefinition(CtypeContainerElement):
-    properties: list[CtypeStructField]
+    properties: list[CtypeContainerProperty]
 
 
 @dataclass(frozen=True)

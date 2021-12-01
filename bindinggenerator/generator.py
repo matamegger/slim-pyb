@@ -5,7 +5,7 @@ import bindinggenerator.model
 from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion, Container
 from astparser.types import *
 from bindinggenerator.model import BindingFile, CtypeContainer, CtypeContainerDefinition, CtypeContainerDeclaration, \
-    CtypeContainerType, CtypeContainerElement, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
+    CtypeContainerType, CtypeContainerElement, CtypeContainerProperty, CtypeFieldType, NamedCtypeFieldType, \
     SplittableElement, CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement, \
     EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names
 from topologicalsort import Node, TopologicalSorter, CircularDependency, Sorted
@@ -284,7 +284,7 @@ class PythonBindingFileGenerator:
         container_type = self.__get_container_type(container)
         return CtypeContainer(
             name=container.name,
-            properties=[CtypeStructField(name=property.name, type=self._convert_type(property.type))
+            properties=[CtypeContainerProperty(name=property.name, type=self._convert_type(property.type))
                         for property in container.properties],
             container_type=container_type
         )

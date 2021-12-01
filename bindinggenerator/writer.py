@@ -5,7 +5,7 @@ from typing import IO
 from bindinggenerator import primitive_names_to_ctypes
 from bindinggenerator.model import BindingFile, Import, Element, Definition, Enum, CtypeContainer, \
     CtypeContainerDeclaration, CtypeContainerDefinition, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, \
-    CtypeFieldTypeArray, CtypeFieldFunctionPointer, CtypeStructField, System, SystemMethod, SystemField, \
+    CtypeFieldTypeArray, CtypeFieldFunctionPointer, CtypeContainerProperty, System, SystemMethod, SystemField, \
     CtypeContainerType
 
 
@@ -265,11 +265,11 @@ class PythonBindingWriter(BaseWriter):
         output.write(self.__FIELD_OR_SLOTS_ASSIGNMENT_END)
         output.new_line()
 
-    def __write_struct_declaration_slot(self, field: CtypeStructField, output: Output, indent: int):
+    def __write_struct_declaration_slot(self, field: CtypeContainerProperty, output: Output, indent: int):
         self._write_indent(output, indent)
         output.write(self.__SLOT_PATTERN.format(field.name))
 
-    def __write_struct_declaration_field(self, field: CtypeStructField, output: Output, indent: int):
+    def __write_struct_declaration_field(self, field: CtypeContainerProperty, output: Output, indent: int):
         self._write_indent(output, indent)
         output.write(self.__FIELD_PATTERN.format(field.name, self.__mapping(field.type)))
 
