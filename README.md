@@ -51,4 +51,4 @@ To make the usage of this project easier, but still support major platforms a do
 
 ## Credits
 - [eliben/pycparser](https://github.com/eliben/pycparser)
-- (dapperfu/Python-Simulink)[https://github.com/dapperfu/Python-Simulink]
+- [dapperfu/Python-Simulink](https://github.com/dapperfu/Python-Simulink)
