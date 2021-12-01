@@ -4,7 +4,7 @@ from typing import Callable, TypeVar, Union
 import bindinggenerator.model
 from astparser.model import Module, TypeDefinition, Struct, Enum, Property, Union as AstParserUnion, Container
 from astparser.types import *
-from bindinggenerator.model import BindingFile, CtypeContainer, CtypeContainerDeclaration, CtypeContainerDefinition, \
+from bindinggenerator.model import BindingFile, CtypeContainer, CtypeContainerDefinition, CtypeContainerDeclaration, \
     CtypeContainerType, CtypeContainerElement, CtypeStructField, CtypeFieldType, NamedCtypeFieldType, \
     SplittableElement, CtypeFieldPointer, CtypeFieldTypeArray, CtypeFieldFunctionPointer, Enum as EnumElement, \
     EnumEntry as EnumElementEntry, Definition, Import, Element, get_base_type_names
@@ -62,7 +62,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=get_base_type_names(element.for_type),
                 data=element
             )
-        elif isinstance(element, CtypeContainerDeclaration):
+        elif isinstance(element, CtypeContainerDefinition):
             keys = [self._mark_as_direct_dependency_name(element.name)]
             dependencies = self._get_dependencies(element)
             direct_dependencies = self._get_direct_ctype_dependencies(element)
@@ -83,7 +83,7 @@ class PythonCodeElementGraphCreator:
                 dependencies=list(set(dependencies)),
                 data=element
             )
-        elif isinstance(element, CtypeContainerDefinition):
+        elif isinstance(element, CtypeContainerDeclaration):
             return Node(
                 keys=[element.name],
                 dependencies=[],
@@ -103,12 +103,12 @@ class PythonCodeElementGraphCreator:
         return f"__{regular_name}__complete"
 
     @staticmethod
-    def _get_direct_ctype_dependencies(declaration: CtypeContainerDeclaration) -> list[str]:
+    def _get_direct_ctype_dependencies(declaration: CtypeContainerDefinition) -> list[str]:
         return [_get_name_of_type(field.type) for field in declaration.properties
                 if _get_name_of_type(field.type) is not None]
 
     @staticmethod
-    def _get_dependencies(declaration: Union[CtypeContainerDeclaration]) -> list[str]:
+    def _get_dependencies(declaration: Union[CtypeContainerDefinition]) -> list[str]:
         return [type_name
                 for field in declaration.properties
                 for type_name in get_base_type_names(field.type)]

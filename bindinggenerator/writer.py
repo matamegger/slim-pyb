@@ -4,7 +4,7 @@ from typing import IO
 
 from bindinggenerator import primitive_names_to_ctypes
 from bindinggenerator.model import BindingFile, Import, Element, Definition, Enum, CtypeContainer, \
-    CtypeContainerDefinition, CtypeContainerDeclaration, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, \
+    CtypeContainerDeclaration, CtypeContainerDefinition, CtypeFieldPointer, CtypeFieldType, NamedCtypeFieldType, \
     CtypeFieldTypeArray, CtypeFieldFunctionPointer, CtypeStructField, System, SystemMethod, SystemField, \
     CtypeContainerType
 
@@ -184,19 +184,19 @@ class PythonBindingWriter(BaseWriter):
                 output.write(self._INDENT + self.__ENUM_ENTRY_PATTERN.format(entry.name, entry.value))
                 output.new_line()
         elif isinstance(element, CtypeContainer):
-            self._write_container_definition(element, output)
+            self._write_container_declaration(element, output)
             output.new_line()
-            self.__write_container_declaration(element, False, output, 1)
-        elif isinstance(element, CtypeContainerDefinition):
-            self._write_container_definition(element, output)
+            self.__write_container_definition(element, False, output, 1)
+        elif isinstance(element, CtypeContainerDeclaration):
+            self._write_container_declaration(element, output)
             output.write(self._INDENT)
             output.write(self.__PASS)
-        elif isinstance(element, CtypeContainerDeclaration):
-            self.__write_container_declaration(element, True, output, 0)
+        elif isinstance(element, CtypeContainerDefinition):
+            self.__write_container_definition(element, True, output, 0)
         else:
             raise Exception(f"Unhandled element {element}")
 
-    def _write_container_definition(self, container_definition: CtypeContainerDefinition, output: Output):
+    def _write_container_declaration(self, container_definition: CtypeContainerDeclaration, output: Output):
         if container_definition.container_type == CtypeContainerType.STRUCT:
             output.write(self.__STRUCT_DECLARATION_PATTERN.format(container_definition.name))
         elif container_definition.container_type == CtypeContainerType.UNION:
@@ -206,59 +206,59 @@ class PythonBindingWriter(BaseWriter):
 
         output.new_line()
 
-    def __write_container_declaration(
+    def __write_container_definition(
             self,
-            declaration: CtypeContainerDeclaration,
+            definition: CtypeContainerDefinition,
             with_class_name: bool,
             output: Output,
             indent: int
     ):
-        self.__write_container_declaration_slots(declaration, with_class_name, output, indent)
+        self.__write_container_definition_slots(definition, with_class_name, output, indent)
         output.new_line()
-        self.__write_container_declaration_fields(declaration, with_class_name, output, indent)
+        self.__write_container_definition_fields(definition, with_class_name, output, indent)
 
-    def __write_container_declaration_slots(
+    def __write_container_definition_slots(
             self,
-            declaration: CtypeContainerDeclaration,
+            definition: CtypeContainerDefinition,
             with_class_name: bool,
             output: Output, indent: int
     ):
         self._write_indent(output, indent)
         if with_class_name:
-            output.write(declaration.name)
+            output.write(definition.name)
             output.write(".")
         output.write(self.__SLOTS_ASSIGNMENT_START)
         output.new_line()
         indent = indent + 1
-        for field in declaration.properties[:-1]:
+        for field in definition.properties[:-1]:
             self.__write_struct_declaration_slot(field, output, indent)
             output.write(",")
             output.new_line()
-        self.__write_struct_declaration_slot(declaration.properties[-1], output, indent)
+        self.__write_struct_declaration_slot(definition.properties[-1], output, indent)
         output.new_line()
         indent -= 1
         self._write_indent(output, indent)
         output.write(self.__FIELD_OR_SLOTS_ASSIGNMENT_END)
         output.new_line()
 
-    def __write_container_declaration_fields(
+    def __write_container_definition_fields(
             self,
-            declaration: CtypeContainerDeclaration,
+            definition: CtypeContainerDefinition,
             with_class_name: bool,
             output: Output, indent: int
     ):
         self._write_indent(output, indent)
         if with_class_name:
-            output.write(declaration.name)
+            output.write(definition.name)
             output.write(".")
         output.write(self.__FIELD_ASSIGNMENT_START)
         output.new_line()
         indent = indent + 1
-        for field in declaration.properties[:-1]:
+        for field in definition.properties[:-1]:
             self.__write_struct_declaration_field(field, output, indent)
             output.write(",")
             output.new_line()
-        self.__write_struct_declaration_field(declaration.properties[-1], output, indent)
+        self.__write_struct_declaration_field(definition.properties[-1], output, indent)
         output.new_line()
         indent -= 1
         self._write_indent(output, indent)

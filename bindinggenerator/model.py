@@ -71,21 +71,21 @@ class CtypeContainerElement(Element):
 
 
 @dataclass(frozen=True)
-class CtypeContainerDefinition(CtypeContainerElement):
+class CtypeContainerDeclaration(CtypeContainerElement):
     pass
 
 
 @dataclass(frozen=True)
-class CtypeContainerDeclaration(CtypeContainerElement):
+class CtypeContainerDefinition(CtypeContainerElement):
     properties: list[CtypeStructField]
 
 
 @dataclass(frozen=True)
-class CtypeContainer(CtypeContainerDeclaration, CtypeContainerDefinition, SplittableElement):
+class CtypeContainer(CtypeContainerDefinition, CtypeContainerDeclaration, SplittableElement):
     def split(self) -> list[Element]:
         return [
-            CtypeContainerDefinition(name=self.name, container_type=self.container_type),
-            CtypeContainerDeclaration(name=self.name, properties=self.properties, container_type=self.container_type)
+            CtypeContainerDeclaration(name=self.name, container_type=self.container_type),
+            CtypeContainerDefinition(name=self.name, properties=self.properties, container_type=self.container_type)
         ]
 
 
