@@ -70,5 +70,6 @@ To make the usage of this project easier, but still support major platforms a do
 
 ## Credits
 - [eliben/pycparser](https://github.com/eliben/pycparser)
+  - The content of the folder `fake_libc_include` is copied from [eliben/pycparser](https://github.com/eliben/pycparser), which is licensed under BSD.
 - [dapperfu/Python-Simulink](https://github.com/dapperfu/Python-Simulink)
 - [multiarch/crossbuild](https://github.com/multiarch/crossbuild)
