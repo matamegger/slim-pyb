@@ -1,6 +1,6 @@
-The content of the folder this file is in, which should be "fake_libc_include" is copied from an BSD licensed code base.
+The content of the folder "fake_libc_include" is copied from an BSD licensed code base.
 
-Additionally, some modifications have been applied. Below is a copy the license:
+Additionally, some modifications have been applied. Below is a copy the original license:
 
 pycparser -- A C parser in Python
 
