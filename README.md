@@ -76,4 +76,4 @@ To make the usage of this project easier, but still support major platforms a do
 - [multiarch/crossbuild](https://github.com/multiarch/crossbuild)
 
 ## Licenses
-- The content of the folder `fake_libc_include` is copied from [eliben/pycparser](https://github.com/eliben/pycparser) and modified. A copy of the original content can be found [here](licenses/PYCPARSER)
+- The content of the folder `fake_libc_include` is copied from [eliben/pycparser](https://github.com/eliben/pycparser) and modified. A copy of the original license can be found [here](licenses/PYCPARSER)
