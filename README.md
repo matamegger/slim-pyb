@@ -2,6 +2,9 @@
 _/slím pa͜ip/_
 
 Python framework to generate binaries and Python bindings for Simulink Models.
+
+## !! The project is not actively maintained nor is it know to be used at the moment. 
+In any case, feel free to reach out to me: matamegger@gmail.com
 ___
 
 ## Motivation
